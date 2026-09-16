@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geocodificador Medellín - Prueba API</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .results.success {
+            display: block;
+            border-left-color: #4caf50;
+        }
+
+        .results.error {
+            display: block;
+            border-left-color: #f44336;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.success {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .status-badge.error {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        .result-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .result-item {
+            margin: 12px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            color: #999;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .result-value {
+            color: #333;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .result-value.location {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            color: #667eea;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 10px 16px;
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #1976d2;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background: #bbdefb;
+        }
+
+        .error-message {
+            color: #c62828;
+            margin-top: 10px;
+        }
+
+        .precision-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+
+        .examples {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .examples h3 {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .example-btn {
+            display: inline-block;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            padding: 6px 12px;
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .example-btn:hover {
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ Geocodificador Medellín</h1>
+        <p class="subtitle">Prueba el API de geocodificación en tiempo real</p>
+
+        <div class="search-box">
+            <input type="text" id="addressInput" placeholder="Ej: Calle 39 # 35-35" value="Calle 39 # 35-35">
+            <button onclick="searchAddress()">Buscar</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Buscando dirección...</p>
+        </div>
+
+        <div class="results" id="results"></div>
+
+        <div class="examples">
+            <h3>📍 Direcciones de ejemplo:</h3>
+            <button class="example-btn" onclick="setExample('Calle 39 # 35-35')">CL 39 #35-35</button>
+            <button class="example-btn" onclick="setExample('Carrera 33 # 36-39')">CR 33 #36-39</button>
+            <button class="example-btn" onclick="setExample('Calle 43 # 30-39')">CL 43 #30-39</button>
+            <button class="example-btn" onclick="setExample('CR 73 # 97-39')">CR 73 #97-39</button>
+            <button class="example-btn" onclick="setExample('Calle 80 # 43-39')">CL 80 #43-39</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        function setExample(address) {
+            document.getElementById('addressInput').value = address;
+            searchAddress();
+        }
+
+        async function searchAddress() {
+            const address = document.getElementById('addressInput').value.trim();
+
+            if (!address) {
+                showError('Por favor ingresa una dirección');
+                return;
+            }
+
+            showLoading(true);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/geocode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ direccion: address })
+                });
+
+                const data = await response.json();
+                showLoading(false);
+
+                if (data.success) {
+                    showSuccess(data);
+                } else {
+                    showError(`Dirección no encontrada (${data.status})`);
+                }
+            } catch (error) {
+                showLoading(false);
+                showError(`Error al conectar con el API: ${error.message}`);
+            }
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showSuccess(data) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.className = 'results success';
+
+            const mapsUrl = `https://www.google.com/maps/search/${data.lat},${data.lon}`;
+            const mapsEmbedUrl = `https://www.google.com/maps?q=${data.lat},${data.lon}&z=17`;
+
+            let precisionText = '';
+            switch(data.precision_meters) {
+                case '2': precisionText = '± 2 metros (Exacto - Rooftop)'; break;
+                case '30': precisionText = '± 30 metros (Intersección)'; break;
+                case '100': precisionText = '± 100 metros (Centroide)'; break;
+                default: precisionText = data.precision_meters + ' metros';
+            }
+
+            resultsDiv.innerHTML = `
+                <div class="result-header">
+                    <div class="status-badge success">✓ ENCONTRADO</div>
+                    <div class="result-title">${data.address_normalized}</div>
+                </div>
+
+                <div class="result-item">
+                    <div class="result-label">Latitud</div>
+                    <div class="result-value location">${data.lat.toFixed(8)}</div>
+                </div>
+
+                <div class="result-item">
+                    <div class="result-label">Longitud</div>
+                    <div class="result-value location">${data.lon.toFixed(8)}</div>
+                </div>
+
+                <div class="result-item">
+                    <div class="result-label">Precisión</div>
+                    <div class="result-value">${precisionText}</div>
+                    <div class="precision-info">
+                        Estado: <strong>${data.status}</strong> |
+                        Fuente: <strong>${data.details.source}</strong>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <a href="${mapsUrl}" target="_blank" class="btn-secondary">
+                        🗺️ Abrir en Google Maps
+                    </a>
+                    <button class="btn-secondary" onclick="copyCoordinates('${data.lat}', '${data.lon}')">
+                        📋 Copiar Coordenadas
+                    </button>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.className = 'results error';
+            resultsDiv.innerHTML = `
+                <div class="result-header">
+                    <div class="status-badge error">✗ ERROR</div>
+                    <div class="result-title">No se encontró</div>
+                </div>
+                <div class="error-message">${message}</div>
+                <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                    Intenta con otra dirección o verifica que exista en la base de datos.
+                </p>
+            `;
+        }
+
+        function copyCoordinates(lat, lon) {
+            const text = `${lat}, ${lon}`;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Coordenadas copiadas: ' + text);
+            });
+        }
+
+        // Buscar al presionar Enter
+        document.getElementById('addressInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchAddress();
+            }
+        });
+
+        // Mostrar instrucción al cargar
+        window.addEventListener('load', () => {
+            console.log('🗺️ Geocodificador Medellín listo');
+            console.log('API: http://localhost:8000');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geocodificador Medellín - Documentación</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 50px;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .version {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 20px;
+        }
+
+        .card p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+
+        .card-links {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .link {
+            display: inline-block;
+            padding: 10px 16px;
+            background: #f0f0f0;
+            border-radius: 6px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .link:hover {
+            background: #e8e8e8;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #4caf50;
+            color: white;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .section h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .table th {
+            background: #f5f5f5;
+            color: #333;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            color: #666;
+        }
+
+        .table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .quick-links {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .feature-item {
+            padding: 16px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .feature-item strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .feature-item span {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .code-block {
+            background: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #333;
+            margin-top: 12px;
+            border-left: 3px solid #667eea;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 20px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗺️ Geocodificador Medellín</h1>
+            <p class="subtitle">API REST de Geocodificación de Alto Rendimiento</p>
+            <p class="version">v1.0.0 • ✅ Producción • 518K+ direcciones indexadas</p>
+        </header>
+
+        <div class="grid">
+            <!-- Quick Start -->
+            <div class="card">
+                <div class="card-icon">🚀</div>
+                <h2>Quick Start</h2>
+                <p>Comienza en 5 minutos. Guía paso a paso para iniciar los servicios.</p>
+                <div class="card-links">
+                    <a href="#" class="link" onclick="scrollTo('quick-start')">Ver Quick Start</a>
+                </div>
+                <div class="status-badge">Recomendado</div>
+            </div>
+
+            <!-- Documentación Completa -->
+            <div class="card">
+                <div class="card-icon">📖</div>
+                <h2>Documentación Completa</h2>
+                <p>Guía exhaustiva: instalación, endpoints, ejemplos, troubleshooting.</p>
+                <div class="card-links">
+                    <a href="DOCUMENTACION_FINAL.md" class="link" target="_blank">Abrir MD</a>
+                </div>
+                <div class="status-badge">35 secciones</div>
+            </div>
+
+            <!-- Prueba Interactiva -->
+            <div class="card">
+                <div class="card-icon">🧪</div>
+                <h2>Prueba Interactiva</h2>
+                <p>Interfaz web para geocodificar direcciones en tiempo real.</p>
+                <div class="card-links">
+                    <a href="test.html" class="link" target="_blank">Abrir Test</a>
+                </div>
+                <div class="status-badge">Activo</div>
+            </div>
+
+            <!-- Endpoints de API -->
+            <div class="card">
+                <div class="card-icon">🔌</div>
+                <h2>Endpoints de API</h2>
+                <p>Documentación de todos los endpoints disponibles con ejemplos.</p>
+                <div class="card-links">
+                    <a href="#" class="link" onclick="scrollTo('endpoints')">Ver Endpoints</a>
+                </div>
+                <div class="status-badge">5 endpoints</div>
+            </div>
+
+            <!-- Arquitectura Técnica -->
+            <div class="card">
+                <div class="card-icon">🏗️</div>
+                <h2>Arquitectura Técnica</h2>
+                <p>Detalles internos: stack, flujos, estructura del código.</p>
+                <div class="card-links">
+                    <a href="CLAUDE.md" class="link" target="_blank">Abrir MD</a>
+                </div>
+                <div class="status-badge">Detallado</div>
+            </div>
+
+            <!-- Docker -->
+            <div class="card">
+                <div class="card-icon">🐳</div>
+                <h2>Comandos Docker</h2>
+                <p>Todos los comandos para iniciar, detener y gestionar servicios.</p>
+                <div class="card-links">
+                    <a href="DOCKER_COMMANDS.md" class="link" target="_blank">Abrir MD</a>
+                </div>
+                <div class="status-badge">20+ comandos</div>
+            </div>
+        </div>
+
+        <!-- Quick Start Section -->
+        <div class="section" id="quick-start">
+            <h3>🚀 Quick Start (5 minutos)</h3>
+            <p>Los pasos mínimos para ejecutar el API:</p>
+
+            <div class="code-block">
+# 1. Preparar datos
+cd ~/Documentos/IA/geocoding-medellin
+mkdir -p data/gpkg
+unzip gpkg_*.zip -d data/gpkg/
+
+# 2. Iniciar servicios
+sudo docker-compose up -d
+
+# 3. Esperar (5 min aprox)
+sudo docker-compose logs -f api
+
+# 4. Probar
+curl http://localhost:8000/api/v1/geocode \
+  -H "Content-Type: application/json" \
+  -d '{"direccion":"Calle 39 # 35-35"}'
+
+# 5. Interfaz web
+open test.html
+            </div>
+
+            <div class="quick-links">
+                <a href="DOCKER_COMMANDS.md" class="btn" target="_blank">📖 Comandos Completos</a>
+                <a href="test.html" class="btn" target="_blank">🧪 Prueba Ahora</a>
+            </div>
+        </div>
+
+        <!-- Endpoints Section -->
+        <div class="section" id="endpoints">
+            <h3>🔌 Endpoints de API</h3>
+            <p>Todos los endpoints disponibles:</p>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Método</th>
+                        <th>Endpoint</th>
+                        <th>Descripción</th>
+                        <th>Precisión</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>GET</td>
+                        <td>/health</td>
+                        <td>Estado del servidor</td>
+                        <td>-</td>
+                    </tr>
+                    <tr>
+                        <td>GET</td>
+                        <td>/stats</td>
+                        <td>Estadísticas de datos</td>
+                        <td>-</td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td>/api/v1/normalize</td>
+                        <td>Normaliza dirección</td>
+                        <td>-</td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td>/api/v1/geocode</td>
+                        <td>Geocodifica dirección (3 niveles)</td>
+                        <td>±2m a ±100m</td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td>/api/v1/geocode/batch</td>
+                        <td>Geocodifica múltiples</td>
+                        <td>±2m a ±100m</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="quick-links">
+                <a href="DOCUMENTACION_FINAL.md#-endpoints-de-api" class="btn" target="_blank">📖 Detalles Completos</a>
+                <a href="http://localhost:8000/docs" class="btn" target="_blank">📚 Swagger UI</a>
+            </div>
+        </div>
+
+        <!-- Features -->
+        <div class="section">
+            <h3>✨ Características Principales</h3>
+            <div class="features">
+                <div class="feature-item">
+                    <strong>⚡ Rápido</strong>
+                    <span>10-50ms por consulta</span>
+                </div>
+                <div class="feature-item">
+                    <strong>🎯 Preciso</strong>
+                    <span>±2 metros (rooftop)</span>
+                </div>
+                <div class="feature-item">
+                    <strong>📊 Completo</strong>
+                    <span>518K+ direcciones</span>
+                </div>
+                <div class="feature-item">
+                    <strong>🔄 3 Niveles</strong>
+                    <span>Exacto, Intersección, Fallback</span>
+                </div>
+                <div class="feature-item">
+                    <strong>🐳 Dockerizado</strong>
+                    <span>Sin instalación local</span>
+                </div>
+                <div class="feature-item">
+                    <strong>📚 Documentado</strong>
+                    <span>Guías completas</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Verificación -->
+        <div class="section">
+            <h3>✅ Verificación de Instalación</h3>
+            <p>Después de iniciar, ejecuta estos checks:</p>
+
+            <div class="code-block">
+# Health check
+curl http://localhost:8000/health
+# Respuesta: {"status":"ok","database":"connected"}
+
+# Estadísticas
+curl http://localhost:8000/stats
+# Respuesta: {"eje_de_nomenclatura":42696,"nomenclatura_domiciliaria":518116}
+
+# Geocodificar
+curl -X POST http://localhost:8000/api/v1/geocode \
+  -H "Content-Type: application/json" \
+  -d '{"direccion":"Calle 39 # 35-35"}'
+            </div>
+        </div>
+
+        <!-- Tablas de Referencia -->
+        <div class="section">
+            <h3>📚 Tipos de Vía Soportados</h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Tipo</th>
+                        <th>Abreviación</th>
+                        <th>Ejemplo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Calle</td>
+                        <td>CL</td>
+                        <td>Calle 39 # 35-35</td>
+                    </tr>
+                    <tr>
+                        <td>Carrera</td>
+                        <td>CR</td>
+                        <td>Carrera 33 # 36-39</td>
+                    </tr>
+                    <tr>
+                        <td>Avenida</td>
+                        <td>AV</td>
+                        <td>Avenida 80 # 50-20</td>
+                    </tr>
+                    <tr>
+                        <td>Transversal</td>
+                        <td>TR</td>
+                        <td>Transversal 45 # 60-10</td>
+                    </tr>
+                    <tr>
+                        <td>Circular</td>
+                        <td>CIR</td>
+                        <td>Circular 3 # 70-25</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Support -->
+        <div class="section">
+            <h3>🆘 Soporte y Recursos</h3>
+            <div class="quick-links">
+                <a href="INDEX.md" class="btn" target="_blank">📑 Índice Completo</a>
+                <a href="DOCUMENTACION_FINAL.md#-troubleshooting" class="btn" target="_blank">🐛 Troubleshooting</a>
+                <a href="test.html" class="btn" target="_blank">🧪 Prueba Interactiva</a>
+                <a href="http://localhost:8000/health" class="btn" target="_blank">💚 Health Check</a>
+            </div>
+        </div>
+
+        <footer>
+            <p>🗺️ Geocodificador Medellín v1.0.0 • ✅ Listo para Producción</p>
+            <p>Documentación • Soporte • 2026-09-06</p>
+        </footer>
+    </div>
+
+    <script>
+        function scrollTo(id) {
+            event.preventDefault();
+            document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Auto-redirect si los servicios están activos
+        window.addEventListener('load', async () => {
+            try {
+                const health = await fetch('http://localhost:8000/health');
+                if (health.ok) {
+                    console.log('✅ API está activo en http://localhost:8000');
+                }
+            } catch (e) {
+                console.log('⚠️ API no está disponible');
+            }
+        });
+    </script>
+</body>
+</html>

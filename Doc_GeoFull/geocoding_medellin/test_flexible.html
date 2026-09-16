@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geocodificador Medellín — Prueba de búsqueda flexible</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+    :root {
+        --bg: #f4f5f7;
+        --panel: #ffffff;
+        --line: #e2e5ea;
+        --text: #1f2430;
+        --muted: #6b7280;
+        --accent: #667eea;
+        --accent-2: #764ba2;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    header {
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: #fff;
+        padding: 14px 20px;
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header .sub { font-size: 13px; opacity: .85; }
+    header .api { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    header .api input {
+        width: 230px; padding: 6px 10px; border-radius: 6px;
+        border: 1px solid rgba(255,255,255,.35);
+        background: rgba(255,255,255,.15); color: #fff; font-size: 13px;
+    }
+    header .api input::placeholder { color: rgba(255,255,255,.6); }
+    #health { font-size: 12px; padding: 3px 8px; border-radius: 20px; background: rgba(0,0,0,.2); white-space: nowrap; }
+
+    main { flex: 1; display: flex; min-height: 0; }
+
+    /* ---------- Panel izquierdo ---------- */
+    #panel {
+        width: 460px;
+        min-width: 320px;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .box { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .box h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+
+    textarea {
+        width: 100%; height: 130px; resize: vertical;
+        padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+        font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+        font-size: 13px; line-height: 1.6; color: var(--text);
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+
+    .controls { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+    .controls label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .controls input[type=number] { width: 60px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
+
+    button {
+        padding: 9px 18px; border: none; border-radius: 8px; cursor: pointer;
+        font-size: 14px; font-weight: 600; color: #fff;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    }
+    button:hover:not(:disabled) { filter: brightness(1.07); }
+    button:disabled { opacity: .5; cursor: default; }
+    button.ghost {
+        background: none; color: var(--muted); border: 1px solid var(--line);
+        font-weight: 500; padding: 7px 12px; font-size: 13px;
+    }
+    button.ghost:hover:not(:disabled) { background: #f0f1f4; filter: none; }
+
+    #resumen { display: flex; flex-wrap: wrap; gap: 6px; }
+    #resumen:empty { display: none; }
+    #resumen .chip {
+        font-size: 11px; padding: 3px 9px; border-radius: 20px;
+        color: #fff; font-weight: 600; cursor: pointer; user-select: none;
+    }
+    #resumen .chip.off { opacity: .3; }
+
+    #lista { flex: 1; overflow-y: auto; min-height: 0; }
+
+    .item { border-bottom: 1px solid var(--line); }
+    .item .head {
+        padding: 10px 16px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start;
+    }
+    .item .head:hover { background: #f7f8fa; }
+    .item.sel .head { background: #eef0ff; }
+    .item .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; }
+    .item .txt { flex: 1; min-width: 0; }
+    .item .q { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    .item .meta { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+    .item .badge {
+        font-size: 10px; font-weight: 700; color: #fff; padding: 2px 7px;
+        border-radius: 4px; white-space: nowrap; margin-top: 2px;
+    }
+
+    .cands { display: none; padding: 0 16px 10px 36px; }
+    .item.open .cands { display: block; }
+    .cand {
+        display: flex; gap: 8px; align-items: center; padding: 5px 8px;
+        border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .cand:hover { background: #f0f1f4; }
+    .cand .cdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+    .cand .cdir { flex: 1; font-family: ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+    .cand .cscore { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* ---------- Mapa ---------- */
+    #map { flex: 1; min-width: 0; }
+    .leaflet-popup-content { font-size: 13px; line-height: 1.5; }
+    .leaflet-popup-content b { font-family: ui-monospace, Consolas, monospace; }
+    .pop-badge { display: inline-block; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
+
+    .spin {
+        width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4);
+        border-top-color: #fff; border-radius: 50%; display: inline-block;
+        animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 900px) {
+        main { flex-direction: column; }
+        #panel { width: 100%; border-right: none; border-bottom: 1px solid var(--line); max-height: 55%; }
+        #map { min-height: 300px; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>Geocodificador Medellín</h1>
+    <span class="sub">/api/v1/geocode/flexible — varias direcciones sobre el mapa</span>
+    <div class="api">
+        <span>API</span>
+        <input id="api" value="http://localhost:8000" spellcheck="false">
+        <span id="health">sin verificar</span>
+    </div>
+</header>
+
+<main>
+    <div id="panel">
+        <div class="box">
+            <h2>Direcciones (una por línea)</h2>
+            <textarea id="dirs" spellcheck="false">Calle 39 # 35-35
+Calle 39 # 35-7
+CR 33A 36B-20
+Carrera 70 # 44B SUR-101
+Transversal 39B # 72-15
+Diagonal 74B # 32-15
+Calle 10 # 43E-30
+Avenida 33 # 74-40</textarea>
+            <div class="controls">
+                <button id="run">Geocodificar</button>
+                <label>límite <input id="limit" type="number" value="5" min="1" max="50"></label>
+                <label><input id="viaonly" type="checkbox" checked> incluir_via_only</label>
+                <button class="ghost" id="csv" disabled>CSV</button>
+                <button class="ghost" id="geojson" disabled>GeoJSON</button>
+            </div>
+        </div>
+        <div class="box"><div id="resumen"></div></div>
+        <div id="lista"></div>
+    </div>
+    <div id="map"></div>
+</main>
+
+<script>
+// ---------- Niveles de coincidencia (mismos que modules/geocoder.py) ----------
+const NIVELES = {
+    EXACT_MATCH:        { color: '#16a34a', label: 'EXACTO ±2m' },
+    PLACA_APROX:        { color: '#65a30d', label: 'CUADRA ±50m' },
+    INTERSECTION_MATCH: { color: '#0891b2', label: 'CRUCE ±30m' },
+    VIA_APENDICE:       { color: '#ca8a04', label: 'VÍA VECINA ±80m' },
+    LOTE:               { color: '#ea580c', label: 'LOTE ±80m' },
+    VIA_ONLY:           { color: '#7c3aed', label: 'SOLO VÍA ±200m' },
+    FALLBACK:           { color: '#dc2626', label: 'CENTROIDE ±100m' },
+    NOT_FOUND:          { color: '#9ca3af', label: 'NO ENCONTRADA' },
+    NORMALIZATION_ERROR:{ color: '#9ca3af', label: 'NO NORMALIZA' },
+    ERROR:              { color: '#4b5563', label: 'ERROR' },
+};
+const nivel = n => NIVELES[n] || { color: '#9ca3af', label: n || '—' };
+
+// ---------- Mapa ----------
+const map = L.map('map', { zoomControl: true }).setView([6.2442, -75.5812], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+const capa = L.layerGroup().addTo(map);
+
+// ---------- Estado ----------
+let filas = [];            // { direccion, res, error, marcadores: [], best }
+let filtros = new Set();   // niveles ocultos
+
+const $ = s => document.querySelector(s);
+const base = () => $('#api').value.replace(/\/+$/, '');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------- Health ----------
+async function health() {
+    const el = $('#health');
+    el.textContent = 'verificando…';
+    try {
+        const r = await fetch(base() + '/health');
+        const j = await r.json();
+        el.textContent = j.status === 'ok' ? '● API y BD conectadas' : '● API arriba, BD ' + j.database;
+        el.style.background = j.status === 'ok' ? 'rgba(22,163,74,.65)' : 'rgba(202,138,4,.65)';
+    } catch (e) {
+        el.textContent = '● API inalcanzable';
+        el.style.background = 'rgba(220,38,38,.7)';
+    }
+}
+health();
+$('#api').addEventListener('change', health);
+
+// ---------- Consulta ----------
+async function consultar(direccion) {
+    const url = base() + '/api/v1/geocode/flexible'
+        + '?direccion=' + encodeURIComponent(direccion)
+        + '&limit=' + encodeURIComponent($('#limit').value)
+        + '&incluir_via_only=' + ($('#viaonly').checked ? 'true' : 'false');
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — ' + (await r.text()).slice(0, 200));
+    return r.json();
+}
+
+async function run() {
+    const direcciones = $('#dirs').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!direcciones.length) return;
+
+    const btn = $('#run');
+    btn.disabled = true;
+    capa.clearLayers();
+    filas = direcciones.map(d => ({ direccion: d, res: null, error: null, marcadores: [] }));
+    filtros.clear();
+    pintar();
+
+    let hechos = 0;
+    const total = direcciones.length;
+    const paso = () => { btn.innerHTML = '<span class="spin"></span>' + (++hechos) + ' / ' + total; };
+    btn.innerHTML = '<span class="spin"></span>0 / ' + total;
+
+    // 4 en paralelo: rápido sin saturar la API local
+    const cola = filas.map((f, i) => [f, i]);
+    await Promise.all(Array.from({ length: Math.min(4, cola.length) }, async () => {
+        while (cola.length) {
+            const [fila] = cola.shift();
+            try { fila.res = await consultar(fila.direccion); }
+            catch (e) { fila.error = e.message; }
+            paso();
+            pintar();
+        }
+    }));
+
+    btn.disabled = false;
+    btn.textContent = 'Geocodificar';
+    $('#csv').disabled = $('#geojson').disabled = false;
+    encuadrar();
+}
+
+// ---------- Dibujo ----------
+function nivelDe(fila) {
+    if (fila.error) return 'ERROR';
+    if (!fila.res) return null;
+    return fila.res.success ? fila.res.match_level : fila.res.status;
+}
+
+function pintar() {
+    capa.clearLayers();
+    filas.forEach(f => f.marcadores = []);
+
+    // Mapa
+    filas.forEach((fila, i) => {
+        if (!fila.res || !fila.res.success) return;
+        (fila.res.candidates || []).forEach((c, j) => {
+            if (c.lat == null || c.lon == null) return;
+            if (filtros.has(c.match_level)) return;
+            const info = nivel(c.match_level);
+            const mejor = j === 0;
+
+            L.circle([c.lat, c.lon], {
+                radius: Number(c.precision_meters) || 50,
+                color: info.color, weight: 1, opacity: mejor ? .5 : .2,
+                fillColor: info.color, fillOpacity: mejor ? .10 : .04,
+            }).addTo(capa);
+
+            const m = L.circleMarker([c.lat, c.lon], {
+                radius: mejor ? 9 : 5,
+                color: '#fff', weight: mejor ? 2.5 : 1.5,
+                fillColor: info.color, fillOpacity: mejor ? 1 : .75,
+            }).addTo(capa);
+
+            m.bindPopup(
+                '<div style="margin-bottom:4px"><span class="pop-badge" style="background:' + info.color + '">'
+                + esc(info.label) + '</span> <b>' + (mejor ? '#1 mejor' : '#' + (j + 1)) + '</b></div>'
+                + '<b>' + esc(c.direccion || '—') + '</b><br>'
+                + '<span style="color:#6b7280">consulta:</span> ' + esc(fila.direccion) + '<br>'
+                + '<span style="color:#6b7280">vía/placa:</span> ' + esc(c.via || '—') + ' · ' + esc(c.placa || '—') + '<br>'
+                + '<span style="color:#6b7280">score:</span> ' + c.score
+                + ' · <span style="color:#6b7280">cbml:</span> ' + esc(c.cbml || '—') + '<br>'
+                + '<span style="color:#6b7280">lat/lon:</span> ' + c.lat.toFixed(6) + ', ' + c.lon.toFixed(6)
+            );
+            m.on('click', () => seleccionar(i, false));
+            fila.marcadores.push(m);
+        });
+    });
+
+    // Resumen por nivel (clic = filtrar)
+    const cuenta = {};
+    filas.forEach(f => { const n = nivelDe(f); if (n) cuenta[n] = (cuenta[n] || 0) + 1; });
+    $('#resumen').innerHTML = Object.entries(cuenta).map(([n, c]) =>
+        '<span class="chip' + (filtros.has(n) ? ' off' : '') + '" data-n="' + esc(n) + '" style="background:'
+        + nivel(n).color + '">' + esc(nivel(n).label) + ' · ' + c + '</span>'
+    ).join('');
+
+    // Lista
+    $('#lista').innerHTML = filas.map((fila, i) => {
+        const n = nivelDe(fila);
+        const info = nivel(n);
+        let meta, cands = '';
+
+        if (fila.error) {
+            meta = '<span style="color:#dc2626">' + esc(fila.error) + '</span>';
+        } else if (!fila.res) {
+            meta = 'consultando…';
+        } else if (!fila.res.success) {
+            const nd = fila.res.normalized || {};
+            meta = 'sin resultados' + (nd.direccion_db ? ' · normalizada: ' + esc(nd.direccion_db) : '');
+        } else {
+            const b = fila.res.best;
+            meta = esc(b.direccion || '—') + ' · ' + b.lat.toFixed(5) + ', ' + b.lon.toFixed(5)
+                 + ' · score ' + b.score + ' · ' + fila.res.total + ' cand.';
+            cands = '<div class="cands">' + fila.res.candidates.map((c, j) =>
+                '<div class="cand" data-i="' + i + '" data-j="' + j + '">'
+                + '<span class="cdot" style="background:' + nivel(c.match_level).color + '"></span>'
+                + '<span class="cdir">' + esc(c.direccion || '—') + '</span>'
+                + '<span class="cscore">' + esc(c.match_level) + ' · ' + c.score + '</span></div>'
+            ).join('') + '</div>';
+        }
+
+        return '<div class="item" data-i="' + i + '">'
+            + '<div class="head">'
+            + '<span class="dot" style="background:' + info.color + '"></span>'
+            + '<span class="txt"><span class="q">' + esc(fila.direccion) + '</span>'
+            + '<span class="meta">' + meta + '</span></span>'
+            + '<span class="badge" style="background:' + info.color + '">' + esc(info.label) + '</span>'
+            + '</div>' + cands + '</div>';
+    }).join('');
+}
+
+function seleccionar(i, volar) {
+    document.querySelectorAll('.item').forEach(el => el.classList.toggle('sel', +el.dataset.i === i));
+    const fila = filas[i];
+    if (!fila || !fila.marcadores.length) return;
+    const m = fila.marcadores[0];
+    if (volar) map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+    m.openPopup();
+}
+
+function encuadrar() {
+    const pts = [];
+    filas.forEach(f => f.marcadores.forEach(m => pts.push(m.getLatLng())));
+    if (pts.length === 1) map.setView(pts[0], 17);
+    else if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
+}
+
+// ---------- Eventos delegados ----------
+$('#lista').addEventListener('click', e => {
+    const cand = e.target.closest('.cand');
+    if (cand) {
+        const i = +cand.dataset.i, j = +cand.dataset.j;
+        const m = filas[i].marcadores[j];
+        if (m) { map.setView(m.getLatLng(), Math.max(map.getZoom(), 17)); m.openPopup(); }
+        return;
+    }
+    const item = e.target.closest('.item');
+    if (!item) return;
+    item.classList.toggle('open');
+    seleccionar(+item.dataset.i, true);
+});
+
+$('#resumen').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const n = chip.dataset.n;
+    filtros.has(n) ? filtros.delete(n) : filtros.add(n);
+    pintar();
+});
+
+$('#run').addEventListener('click', run);
+$('#dirs').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) run();
+});
+
+// ---------- Exportar ----------
+function bajar(nombre, texto, tipo) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([texto], { type: tipo }));
+    a.download = nombre;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$('#csv').addEventListener('click', () => {
+    const cols = ['consulta', 'match_level', 'direccion', 'via', 'placa', 'lat', 'lon', 'precision_meters', 'score', 'cbml', 'objectid'];
+    const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+    const lineas = [cols.join(',')];
+    filas.forEach(f => {
+        if (!f.res || !f.res.success) {
+            lineas.push([f.direccion, f.error ? 'ERROR' : f.res ? f.res.status : 'PENDIENTE'].map(q).join(',')
+                + ','.repeat(cols.length - 2));
+            return;
+        }
+        f.res.candidates.forEach(c => lineas.push([
+            f.direccion, c.match_level, c.direccion, c.via, c.placa,
+            c.lat, c.lon, c.precision_meters, c.score, c.cbml, c.objectid
+        ].map(q).join(',')));
+    });
+    bajar('geocodificacion.csv', '﻿' + lineas.join('\n'), 'text/csv;charset=utf-8');
+});
+
+$('#geojson').addEventListener('click', () => {
+    const features = [];
+    filas.forEach(f => {
+        if (!f.res || !f.res.success) return;
+        f.res.candidates.forEach((c, j) => features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+            properties: { consulta: f.direccion, rank: j + 1, ...c }
+        }));
+    });
+    bajar('geocodificacion.geojson', JSON.stringify({ type: 'FeatureCollection', features }, null, 2), 'application/geo+json');
+});
+</script>
+</body>
+</html>
