@@ -1,0 +1,41 @@
+name: Continuous Deployment - Rama Desarrollo
+
+on:
+  push:
+    branches:
+      - desarrollo
+
+jobs:
+  deploy:
+    name: Despliegue en Servidor de Pruebas
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Copiar archivos al servidor vía SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          target: "/opt/geofull-v4"
+          overwrite: true
+
+      - name: Reconstruir y ejecutar contenedores Docker
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+            cd /opt/geofull-v4
+            echo "Reiniciando servicios Docker para GeoFull V4..."
+            docker compose down --remove-orphans
+            docker compose up -d --build
+            echo "Verificando estado de contenedores..."
+            docker compose ps
