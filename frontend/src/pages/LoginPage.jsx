@@ -125,7 +125,7 @@ export function LoginPage() {
             <div className="grid grid-cols-1 gap-2">
               <button
                 type="button"
-                onClick={() => handleQuickLogin('admin@geofull.app', 'admin123')}
+                onClick={() => handleQuickLogin('admin@geofull.app', 'GeoFull2026!SuperAdmin')}
                 className="w-full py-2 px-3 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>🔑 Super Admin Global</span>
@@ -134,7 +134,7 @@ export function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => handleQuickLogin('demo@empresa.com', 'demo123')}
+                onClick={() => handleQuickLogin('demo@empresa.com', 'GeoFull2026!DemoEmpresa')}
                 className="w-full py-2 px-3 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>🏢 Admin Empresa Demo</span>
@@ -143,7 +143,7 @@ export function LoginPage() {
 
               <button
                 type="button"
-                onClick={() => handleQuickLogin('coordinadora@empresa.com', 'demo123')}
+                onClick={() => handleQuickLogin('coordinadora@empresa.com', 'GeoFull2026!Coordinadora')}
                 className="w-full py-2 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span>🚚 Coordinadora Express</span>
