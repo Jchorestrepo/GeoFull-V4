@@ -36,11 +36,23 @@ jobs:
             set -e
             cd /opt/geofull-v4
             echo "Reiniciando servicios Docker para GeoFull V4..."
-            if docker compose version >/dev/null 2>&1; then
-              CMD="docker compose"
+            
+            # Determinar si se requiere sudo para acceder a docker.sock
+            if docker info >/dev/null 2>&1; then
+              DOCKER_PREFIX=""
+            elif sudo docker info >/dev/null 2>&1; then
+              DOCKER_PREFIX="sudo"
             else
-              CMD="docker-compose"
+              echo "Error: Permiso denegado para el socket /var/run/docker.sock"
+              exit 1
             fi
+
+            if $DOCKER_PREFIX docker compose version >/dev/null 2>&1; then
+              CMD="$DOCKER_PREFIX docker compose"
+            else
+              CMD="$DOCKER_PREFIX docker-compose"
+            fi
+
             $CMD down || true
             $CMD up -d --build
             echo "Estado de los contenedores GeoFull V4:"
