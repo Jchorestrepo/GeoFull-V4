@@ -36,8 +36,13 @@ jobs:
             set -e
             cd /opt/geofull-v4
             echo "Reiniciando servicios Docker para GeoFull V4..."
-            docker compose down --remove-orphans
-            docker compose up -d --build
-            echo "Verificando estado de contenedores..."
-            docker compose ps
+            if docker compose version >/dev/null 2>&1; then
+              CMD="docker compose"
+            else
+              CMD="docker-compose"
+            fi
+            $CMD down || true
+            $CMD up -d --build
+            echo "Estado de los contenedores GeoFull V4:"
+            $CMD ps
 
