@@ -187,7 +187,11 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_tenant ON usuarios (tenant_id);
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON usuarios;
 CREATE POLICY tenant_isolation ON usuarios
-    USING (tenant_id = current_setting('app.current_tenant_id', true));
+    USING (
+        current_setting('app.current_tenant_id', true) IS NULL 
+        OR current_setting('app.current_tenant_id', true) = ''
+        OR tenant_id = current_setting('app.current_tenant_id', true)
+    );
 
 -- Personal Conductores (Módulo Personal)
 CREATE TABLE IF NOT EXISTS personal_conductores (
