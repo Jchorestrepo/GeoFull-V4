@@ -6,7 +6,7 @@ import { Toast } from '../components/ui/Toast';
 import { ShieldAlert, Building2, Plus, Check, LogIn, ExternalLink, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export function SaaSAdminPage() {
   const { user, impersonateTenant } = useAuth();
