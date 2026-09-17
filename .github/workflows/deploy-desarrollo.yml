@@ -20,7 +20,8 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "."
           target: "/opt/geofull-v4"
           overwrite: true
 
@@ -30,7 +31,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SERVER_PORT }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             set -e
             cd /opt/geofull-v4
@@ -39,3 +40,4 @@ jobs:
             docker compose up -d --build
             echo "Verificando estado de contenedores..."
             docker compose ps
+
