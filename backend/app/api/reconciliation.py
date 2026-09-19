@@ -355,6 +355,9 @@ class DriverCreateRequest(BaseModel):
     fecha_nacimiento: Optional[str] = None
     jefe_zona: Optional[str] = None
     tipo_contrato: Optional[str] = "PAQUETEO"
+    tipo_remuneracion: Optional[str] = "DESTAJO"
+    salario_fijo: Optional[float] = 0.0
+    periodicidad_pago: Optional[str] = "GLOBAL"
     tarifa_paquete: Optional[float] = 2000.0
     banco: Optional[str] = None
     cuenta: Optional[str] = None
@@ -396,7 +399,10 @@ async def list_drivers(
                 c.fecha_nacimiento,
                 c.jefe_zona,
                 c.tipo_contrato,
-                c.tarifa_paquete,
+                COALESCE(c.tipo_remuneracion, 'DESTAJO') as tipo_remuneracion,
+                COALESCE(c.salario_fijo, 0.0) as salario_fijo,
+                COALESCE(c.periodicidad_pago, 'GLOBAL') as periodicidad_pago,
+                COALESCE(c.tarifa_paquete, 2000.0) as tarifa_paquete,
                 c.banco,
                 c.cuenta,
                 c.tipo_cuenta,
@@ -418,7 +424,8 @@ async def list_drivers(
             LEFT JOIN pedidos p ON p.domiciliario_id = c.id AND p.tenant_id = c.tenant_id
             WHERE c.tenant_id = :tenant_id {where_search}
             GROUP BY c.id, c.nombre_completo, c.cedula, c.nombres, c.apellidos, c.telefono,
-                     c.fecha_nacimiento, c.jefe_zona, c.tipo_contrato, c.tarifa_paquete,
+                     c.fecha_nacimiento, c.jefe_zona, c.tipo_contrato, c.tipo_remuneracion,
+                     c.salario_fijo, c.periodicidad_pago, c.tarifa_paquete,
                      c.banco, c.cuenta, c.tipo_cuenta, c.cc_titular, c.cuentas_bancarias,
                      c.plataformas, c.foto, c.doc_cedula_frontal, c.doc_cedula_trasera,
                      c.doc_servicios, c.doc_certificado_bancario, c.docs_rut, c.alias_nombres, c.activo
@@ -452,12 +459,12 @@ async def create_driver(req: DriverCreateRequest, x_tenant_id: str = Header("emp
         insert_sql = text("""
             INSERT INTO personal_conductores (
                 tenant_id, nombre_completo, cedula, nombres, apellidos, telefono, fecha_nacimiento, jefe_zona,
-                tipo_contrato, tarifa_paquete, banco, cuenta, tipo_cuenta, cc_titular,
+                tipo_contrato, tipo_remuneracion, salario_fijo, periodicidad_pago, tarifa_paquete, banco, cuenta, tipo_cuenta, cc_titular,
                 cuentas_bancarias, plataformas, foto, doc_cedula_frontal, doc_cedula_trasera,
                 doc_servicios, doc_certificado_bancario, docs_rut, alias_nombres, activo
             ) VALUES (
                 :tenant_id, :nombre, :cedula, :nombres, :apellidos, :telefono, :fecha_nacimiento, :jefe_zona,
-                :contrato, :tarifa, :banco, :cuenta, :tipo_cuenta, :cc_titular,
+                :contrato, :tipo_remuneracion, :salario_fijo, :periodicidad_pago, :tarifa, :banco, :cuenta, :tipo_cuenta, :cc_titular,
                 CAST(:cuentas_bancarias AS jsonb), CAST(:plataformas AS jsonb), :foto, :doc_frontal, :doc_trasera,
                 :doc_servicios, :doc_bancario, CAST(:docs_rut AS jsonb), CAST(:alias AS jsonb), true
             )
@@ -473,6 +480,9 @@ async def create_driver(req: DriverCreateRequest, x_tenant_id: str = Header("emp
             "fecha_nacimiento": fn_date,
             "jefe_zona": req.jefe_zona,
             "contrato": req.tipo_contrato or "PAQUETEO",
+            "tipo_remuneracion": req.tipo_remuneracion or "DESTAJO",
+            "salario_fijo": req.salario_fijo if req.salario_fijo is not None else 0.0,
+            "periodicidad_pago": req.periodicidad_pago or "GLOBAL",
             "tarifa": req.tarifa_paquete if req.tarifa_paquete is not None else 2000.0,
             "banco": req.banco,
             "cuenta": req.cuenta,
@@ -504,6 +514,9 @@ class DriverUpdateRequest(BaseModel):
     fecha_nacimiento: Optional[str] = None
     jefe_zona: Optional[str] = None
     tipo_contrato: Optional[str] = None
+    tipo_remuneracion: Optional[str] = None
+    salario_fijo: Optional[float] = None
+    periodicidad_pago: Optional[str] = None
     tarifa_paquete: Optional[float] = None
     banco: Optional[str] = None
     cuenta: Optional[str] = None
@@ -628,6 +641,19 @@ async def update_driver(
             updates.append("doc_cedula_frontal = :doc_cedula_frontal")
             params["doc_cedula_frontal"] = req.doc_cedula_frontal
 
+        if req.tipo_remuneracion is not None:
+            updates.append("tipo_remuneracion = :tipo_remuneracion")
+            params["tipo_remuneracion"] = req.tipo_remuneracion
+
+        if req.salario_fijo is not None:
+            updates.append("salario_fijo = :salario_fijo")
+            params["salario_fijo"] = req.salario_fijo
+
+        if req.periodicidad_pago is not None:
+            updates.append("periodicidad_pago = :periodicidad_pago")
+            params["periodicidad_pago"] = req.periodicidad_pago
+
+
         if req.doc_cedula_trasera is not None:
             updates.append("doc_cedula_trasera = :doc_cedula_trasera")
             params["doc_cedula_trasera"] = req.doc_cedula_trasera
@@ -668,6 +694,539 @@ async def update_driver(
         if ret_data.get("fecha_nacimiento"):
             ret_data["fecha_nacimiento"] = str(ret_data["fecha_nacimiento"])
         return ret_data
+
+
+# ==============================================================================
+# SECCIÓN: NOVEDADES DE NÓMINA (VALES / ANTICIPOS, BONOS Y PENALIDADES)
+# ==============================================================================
+
+class NovedadCreateRequest(BaseModel):
+    domiciliario_id: uuid.UUID
+    tipo_novedad: str  # 'VALE', 'BONO', 'PENALIDAD'
+    monto: float
+    motivo: Optional[str] = None
+    fecha_novedad: Optional[str] = None
+
+
+@router.get("/payroll/novedades")
+async def list_novedades(
+    domiciliario_id: Optional[uuid.UUID] = Query(None),
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    x_tenant_id: str = Header("empresa_demo")
+):
+    """Lista las novedades (Vales, Bonos y Penalidades) registradas."""
+    async for session in get_db_session(x_tenant_id):
+        params = {"tenant_id": x_tenant_id}
+        conditions = ["n.tenant_id = :tenant_id"]
+
+        if domiciliario_id and isinstance(domiciliario_id, (uuid.UUID, str)):
+            conditions.append("n.domiciliario_id = :dom_id")
+            params["dom_id"] = domiciliario_id
+
+        if fecha_inicio:
+            try:
+                dt_i = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+                conditions.append("n.fecha_novedad >= :f_inicio")
+                params["f_inicio"] = dt_i
+            except Exception:
+                pass
+
+        if fecha_fin:
+            try:
+                dt_f = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+                conditions.append("n.fecha_novedad <= :f_fin")
+                params["f_fin"] = dt_f
+            except Exception:
+                pass
+
+        where_clause = " AND ".join(conditions)
+        sql = text(f"""
+            SELECT n.id, n.tenant_id, n.domiciliario_id, n.tipo_novedad, n.monto, n.motivo,
+                   n.fecha_novedad, n.estado, n.fecha_creacion, c.nombre_completo as domiciliario_nombre
+            FROM novedades_nomina n
+            JOIN personal_conductores c ON c.id = n.domiciliario_id
+            WHERE {where_clause}
+            ORDER BY n.fecha_novedad DESC, n.fecha_creacion DESC
+        """)
+        res = await session.execute(sql, params)
+        rows = [dict(r._mapping) for r in res.fetchall()]
+        for r in rows:
+            if r.get("fecha_novedad"):
+                r["fecha_novedad"] = str(r["fecha_novedad"])
+            if r.get("fecha_creacion"):
+                r["fecha_creacion"] = str(r["fecha_creacion"])
+        return rows
+
+
+@router.post("/payroll/novedades", status_code=status.HTTP_201_CREATED)
+async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Header("empresa_demo")):
+    """Registra un Vale/Anticipo (-), Bono (+) o Penalidad (-) para un trabajador."""
+    if req.monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+
+    tipo_clean = req.tipo_novedad.strip().upper()
+    if tipo_clean not in ["VALE", "BONO", "PENALIDAD"]:
+        raise HTTPException(status_code=400, detail="Tipo de novedad inválido. Use VALE, BONO o PENALIDAD.")
+
+    f_date = datetime.now().date()
+    if req.fecha_novedad:
+        try:
+            f_date = datetime.strptime(req.fecha_novedad, "%Y-%m-%d").date()
+        except ValueError:
+            f_date = datetime.now().date()
+
+    async for session in get_db_session(x_tenant_id):
+        sql = text("""
+            INSERT INTO novedades_nomina (tenant_id, domiciliario_id, tipo_novedad, monto, motivo, fecha_novedad, estado)
+            VALUES (:tenant_id, :dom_id, :tipo, :monto, :motivo, :fecha, 'PENDIENTE')
+            RETURNING *
+        """)
+        res = await session.execute(sql, {
+            "tenant_id": x_tenant_id,
+            "dom_id": req.domiciliario_id,
+            "tipo": tipo_clean,
+            "monto": req.monto,
+            "motivo": req.motivo or "",
+            "fecha": f_date
+        })
+        await session.commit()
+        ret = dict(res.first()._mapping)
+        if ret.get("fecha_novedad"):
+            ret["fecha_novedad"] = str(ret["fecha_novedad"])
+        return ret
+
+
+@router.delete("/payroll/novedades/{novedad_id}")
+async def delete_novedad(novedad_id: uuid.UUID, x_tenant_id: str = Header("empresa_demo")):
+    """Elimina una novedad de nómina."""
+    async for session in get_db_session(x_tenant_id):
+        sql = text("DELETE FROM novedades_nomina WHERE tenant_id = :tenant_id AND id = :id RETURNING id")
+        res = await session.execute(sql, {"tenant_id": x_tenant_id, "id": novedad_id})
+        await session.commit()
+        if not res.first():
+            raise HTTPException(status_code=404, detail="Novedad no encontrada")
+        return {"message": "Novedad eliminada correctamente"}
+
+
+# ==============================================================================
+# SECCIÓN: LIQUIDACIÓN, PRE-CALCULO Y CONCILIACIÓN DE NÓMINA (1 o 2 ARCHIVOS)
+# ==============================================================================
+
+class PayrollPayRequest(BaseModel):
+    domiciliario_ids: List[uuid.UUID]
+    fecha_inicio: str
+    fecha_fin: str
+    metodo_pago: Optional[str] = "TRANSFERENCIA"
+    referencia_pago: Optional[str] = None
+
+
+@router.get("/payroll/summary")
+async def get_payroll_summary(
+    fecha_inicio: str = Query(...),
+    fecha_fin: str = Query(...),
+    domiciliario_id: Optional[uuid.UUID] = Query(None),
+    x_tenant_id: str = Header("empresa_demo")
+):
+    """
+    Calcula la pre-liquidación consolidada de la nómina para el rango de fechas.
+    Consolida:
+    - Entregas registradas (Archivo 1)
+    - Remuneración por Destajo / Salario Fijo / Mixto
+    - (+) Bonos
+    - (-) Penalidades
+    - (-) Vales / Anticipos
+    - Estado actual de Pago (PENDIENTE / PAGADA)
+    """
+    dt_inicio = datetime.now().date()
+    dt_fin = datetime.now().date()
+    try:
+        dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+    except Exception:
+        pass
+    try:
+        dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+    async for session in get_db_session(x_tenant_id):
+        # 1. Obtener domiciliarios activos
+        where_dom = " WHERE c.tenant_id = :tenant_id AND c.activo = true "
+        params_dom = {"tenant_id": x_tenant_id, "f_inicio": dt_inicio, "f_fin": dt_fin}
+        if domiciliario_id and isinstance(domiciliario_id, (uuid.UUID, str)):
+            where_dom += " AND c.id = :dom_id "
+            params_dom["dom_id"] = domiciliario_id
+
+        drivers_sql = text(f"""
+            SELECT c.id, c.nombre_completo, c.cedula, c.banco, c.cuenta, c.tipo_cuenta,
+                   COALESCE(c.tipo_remuneracion, 'DESTAJO') as tipo_remuneracion,
+                   COALESCE(c.salario_fijo, 0.0) as salario_fijo,
+                   COALESCE(c.periodicidad_pago, 'GLOBAL') as periodicidad_pago,
+                   COALESCE(c.tarifa_paquete, 2000.0) as tarifa_paquete
+            FROM personal_conductores c
+            {where_dom}
+            ORDER BY c.nombre_completo ASC
+        """)
+        res_drivers = await session.execute(drivers_sql, params_dom)
+        drivers = [dict(r._mapping) for r in res_drivers.fetchall()]
+
+        payroll_rows = []
+
+        for d in drivers:
+            d_id = d["id"]
+
+            # Paquetes entregados en el rango de fechas (Control y Conciliación)
+            # EXCLUYE guías que ya fueron pagadas previamente (Anti-Doble Pago)
+            # Evalúa fecha_entrega real de la guía en lugar de solo la fecha de importación/actualización del registro
+            pkgs_sql = text("""
+                SELECT COUNT(id) as total_entregados
+                FROM pedidos
+                WHERE tenant_id = :tenant_id
+                  AND domiciliario_id = :dom_id
+                  AND estado = 'ENTREGADO'
+                  AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
+                  AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+                  AND (pagado_conductor IS FALSE OR pagado_conductor IS NULL)
+            """)
+            res_pkgs = await session.execute(pkgs_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+            total_entregados = res_pkgs.scalar() or 0
+
+            # Novedades registradas (Vales, Bonos, Penalidades)
+            nov_sql = text("""
+                SELECT tipo_novedad, COALESCE(SUM(monto), 0.0) as total
+                FROM novedades_nomina
+                WHERE tenant_id = :tenant_id
+                  AND domiciliario_id = :dom_id
+                  AND fecha_novedad >= :f_inicio
+                  AND fecha_novedad <= :f_fin
+                GROUP BY tipo_novedad
+            """)
+            res_nov = await session.execute(nov_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+            nov_map = {r.tipo_novedad: float(r.total) for r in res_nov.fetchall()}
+
+            vales = nov_map.get("VALE", 0.0)
+            bonos = nov_map.get("BONO", 0.0)
+            penalidades = nov_map.get("PENALIDAD", 0.0)
+
+            # Cálculo según tipo de remuneración
+            tipo_rem = d["tipo_remuneracion"]
+            tarifa = float(d["tarifa_paquete"])
+            sal_fijo = float(d["salario_fijo"])
+
+            monto_paquetes = 0.0
+            salario_fijo_aplicado = 0.0
+
+            if tipo_rem == "DESTAJO":
+                monto_paquetes = total_entregados * tarifa
+                salario_fijo_aplicado = 0.0
+            elif tipo_rem == "SALARIO_FIJO":
+                monto_paquetes = 0.0
+                salario_fijo_aplicado = sal_fijo
+            elif tipo_rem == "MIXTO":
+                monto_paquetes = total_entregados * tarifa
+                salario_fijo_aplicado = sal_fijo
+
+            monto_bruto = monto_paquetes + salario_fijo_aplicado + bonos
+            descuentos = vales + penalidades
+            monto_neto = max(0.0, monto_bruto - descuentos)
+
+            # Verificar si ya existe registro de liquidación guardado/pagado
+            liq_sql = text("""
+                SELECT estado_pago, metodo_pago, referencia_pago, fecha_pago
+                FROM liquidaciones
+                WHERE tenant_id = :tenant_id
+                  AND domiciliario_id = :dom_id
+                  AND fecha_inicio = :f_inicio
+                  AND fecha_fin = :f_fin
+                LIMIT 1
+            """)
+            res_liq = await session.execute(liq_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+            liq_row = res_liq.first()
+
+            estado_pago = "PENDIENTE"
+            metodo_pago = None
+            referencia_pago = None
+            fecha_pago = None
+
+            if liq_row:
+                estado_pago = liq_row.estado_pago or "PENDIENTE"
+                metodo_pago = liq_row.metodo_pago
+                referencia_pago = liq_row.referencia_pago
+                fecha_pago = str(liq_row.fecha_pago) if liq_row.fecha_pago else None
+
+            payroll_rows.append({
+                "domiciliario_id": str(d_id),
+                "nombre_completo": d["nombre_completo"],
+                "cedula": d["cedula"],
+                "banco": d["banco"],
+                "cuenta": d["cuenta"],
+                "tipo_remuneracion": tipo_rem,
+                "periodicidad_pago": d["periodicidad_pago"],
+                "total_entregados": total_entregados,
+                "tarifa_paquete": tarifa,
+                "monto_paquetes": round(monto_paquetes, 2),
+                "salario_fijo_aplicado": round(salario_fijo_aplicado, 2),
+                "bonos": round(bonos, 2),
+                "penalidades": round(penalidades, 2),
+                "vales_descontados": round(vales, 2),
+                "monto_bruto": round(monto_bruto, 2),
+                "descuentos": round(descuentos, 2),
+                "monto_neto": round(monto_neto, 2),
+                "estado_pago": estado_pago,
+                "metodo_pago": metodo_pago,
+                "referencia_pago": referencia_pago,
+                "fecha_pago": fecha_pago
+            })
+
+        return {
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+            "total_trabajadores": len(payroll_rows),
+            "total_neto_nomina": round(sum(r["monto_neto"] for r in payroll_rows), 2),
+            "total_pagado": round(sum(r["monto_neto"] for r in payroll_rows if r["estado_pago"] == "PAGADO"), 2),
+            "total_pendiente": round(sum(r["monto_neto"] for r in payroll_rows if r["estado_pago"] == "PENDIENTE"), 2),
+            "items": payroll_rows
+        }
+
+
+@router.post("/payroll/pay")
+async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header("empresa_demo")):
+    """
+    Marca las nóminas de los domiciliarios seleccionados como PAGADA (individual o masivo).
+    Guarda o actualiza la liquidación en la tabla liquidaciones.
+    """
+    if not req.domiciliario_ids:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos un trabajador")
+
+    dt_inicio = datetime.now().date()
+    dt_fin = datetime.now().date()
+    try:
+        dt_inicio = datetime.strptime(req.fecha_inicio, "%Y-%m-%d").date()
+    except Exception:
+        pass
+    try:
+        dt_fin = datetime.strptime(req.fecha_fin, "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+    async for session in get_db_session(x_tenant_id):
+        # Obtener los datos actuales del cálculo de nómina para los seleccionados
+        summary = await get_payroll_summary(
+            fecha_inicio=req.fecha_inicio,
+            fecha_fin=req.fecha_fin,
+            x_tenant_id=x_tenant_id
+        )
+
+        selected_set = {str(did) for did in req.domiciliario_ids}
+        now_dt = datetime.now(BOGOTA_TZ)
+        updated_count = 0
+
+        for row in summary["items"]:
+            if row["domiciliario_id"] in selected_set:
+                dom_id = uuid.UUID(row["domiciliario_id"])
+
+                check_sql = text("""
+                    SELECT id FROM liquidaciones
+                    WHERE tenant_id = :tenant_id AND domiciliario_id = :dom_id
+                      AND fecha_inicio = :f_inicio AND fecha_fin = :f_fin
+                    LIMIT 1
+                """)
+                res_check = await session.execute(check_sql, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+                existing = res_check.first()
+
+                if existing:
+                    upd_sql = text("""
+                        UPDATE liquidaciones SET
+                            estado_pago = 'PAGADO',
+                            metodo_pago = :metodo,
+                            referencia_pago = :ref,
+                            fecha_pago = :fecha_pago,
+                            monto_neto = :neto,
+                            monto_bruto = :bruto,
+                            vales_descontados = :vales,
+                            bonos = :bonos,
+                            penalidades = :penalidades
+                        WHERE id = :id
+                    """)
+                    await session.execute(upd_sql, {
+                        "metodo": req.metodo_pago or "TRANSFERENCIA",
+                        "ref": req.referencia_pago or "",
+                        "fecha_pago": now_dt,
+                        "neto": row["monto_neto"],
+                        "bruto": row["monto_bruto"],
+                        "vales": row["vales_descontados"],
+                        "bonos": row["bonos"],
+                        "penalidades": row["penalidades"],
+                        "id": existing.id
+                    })
+                else:
+                    ins_sql = text("""
+                        INSERT INTO liquidaciones (
+                            tenant_id, domiciliario_id, fecha_inicio, fecha_fin, total_paquetes_periodo,
+                            tarifa_paquete, monto_paquetes, salario_fijo_aplicado, bonos, penalidades,
+                            vales_descontados, monto_bruto, monto_neto, estado_pago, metodo_pago,
+                            referencia_pago, fecha_pago, estado
+                        ) VALUES (
+                            :tenant_id, :dom_id, :f_inicio, :f_fin, :total_pkgs,
+                            :tarifa, :monto_pkgs, :sal_fijo, :bonos, :penalidades,
+                            :vales, :bruto, :neto, 'PAGADO', :metodo,
+                            :ref, :fecha_pago, 'REVISADA'
+                        )
+                    """)
+                    await session.execute(ins_sql, {
+                        "tenant_id": x_tenant_id,
+                        "dom_id": dom_id,
+                        "f_inicio": dt_inicio,
+                        "f_fin": dt_fin,
+                        "total_pkgs": row["total_entregados"],
+                        "tarifa": row["tarifa_paquete"],
+                        "monto_pkgs": row["monto_paquetes"],
+                        "sal_fijo": row["salario_fijo_aplicado"],
+                        "bonos": row["bonos"],
+                        "penalidades": row["penalidades"],
+                        "vales": row["vales_descontados"],
+                        "bruto": row["monto_bruto"],
+                        "neto": row["monto_neto"],
+                        "metodo": req.metodo_pago or "TRANSFERENCIA",
+                        "ref": req.referencia_pago or "",
+                        "fecha_pago": now_dt
+                    })
+
+                # Marcar los pedidos del período como pagados al conductor (con timestamp y liquidacion_id)
+                upd_pkgs = text("""
+                    UPDATE pedidos 
+                    SET pagado_conductor = TRUE,
+                        fecha_pago_conductor = :fecha_pago
+                    WHERE tenant_id = :tenant_id
+                      AND domiciliario_id = :dom_id
+                      AND estado = 'ENTREGADO'
+                      AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
+                      AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+                """)
+                await session.execute(upd_pkgs, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+
+                # Cambiar estado de novedades del período a APLICADO
+                upd_nov = text("""
+                    UPDATE novedades_nomina SET estado = 'APLICADO'
+                    WHERE tenant_id = :tenant_id
+                      AND domiciliario_id = :dom_id
+                      AND fecha_novedad >= :f_inicio
+                      AND fecha_novedad <= :f_fin
+                """)
+                await session.execute(upd_nov, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+
+                updated_count += 1
+
+        # Actualizar estado de período si existe un período activo para este rango
+        upd_per = text("""
+            UPDATE periodos_nomina
+            SET estado = 'PAGADO', fecha_pago = :fecha_pago
+            WHERE tenant_id = :tenant_id
+              AND fecha_inicio = :f_inicio
+              AND fecha_fin = :f_fin
+        """)
+        await session.execute(upd_per, {"tenant_id": x_tenant_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+
+        await session.commit()
+        return {
+            "message": f"Se marcaron como PAGADAS {updated_count} nóminas correctamente",
+            "trabajadores_actualizados": updated_count
+        }
+
+
+# -----------------------------------------------------------------------------
+# GESTIÓN DE PERÍODOS DE NÓMINA (CORTES PERSISTENTES)
+# -----------------------------------------------------------------------------
+
+class PeriodoNominaCreate(BaseModel):
+    nombre_periodo: str
+    fecha_inicio: str
+    fecha_fin: str
+
+
+@router.get("/payroll/periods")
+async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
+    """
+    Devuelve la lista de períodos de nómina guardados y el período activo.
+    """
+    async for session in get_db_session(x_tenant_id):
+        res = await session.execute(text("""
+            SELECT id, nombre_periodo, fecha_inicio, fecha_fin, estado, total_neto, fecha_creacion
+            FROM periodos_nomina
+            WHERE tenant_id = :tenant_id
+            ORDER BY fecha_creacion DESC
+        """), {"tenant_id": x_tenant_id})
+        periods = [dict(r._mapping) for r in res.fetchall()]
+        
+        formatted = []
+        active_period = None
+        for p in periods:
+            p_dict = {
+                "id": str(p["id"]),
+                "nombre_periodo": p["nombre_periodo"],
+                "fecha_inicio": str(p["fecha_inicio"]),
+                "fecha_fin": str(p["fecha_fin"]),
+                "estado": p["estado"],
+                "total_neto": float(p["total_neto"] or 0.0),
+                "fecha_creacion": str(p["fecha_creacion"]) if p["fecha_creacion"] else None
+            }
+            formatted.append(p_dict)
+            if p["estado"] == "ABIERTO" and not active_period:
+                active_period = p_dict
+
+        return {
+            "periodos": formatted,
+            "periodo_activo": active_period
+        }
+
+
+@router.post("/payroll/periods")
+async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Header("empresa_demo")):
+    """
+    Fija o crea un nuevo período de nómina activo para la empresa.
+    """
+    try:
+        dt_inicio = datetime.strptime(req.fecha_inicio, "%Y-%m-%d").date()
+        dt_fin = datetime.strptime(req.fecha_fin, "%Y-%m-%d").date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Fechas inválidas. Formato YYYY-MM-DD")
+
+    async for session in get_db_session(x_tenant_id):
+        # Cerrar períodos anteriores abiertos si los hay
+        await session.execute(text("""
+            UPDATE periodos_nomina 
+            SET estado = 'CERRADO'
+            WHERE tenant_id = :tenant_id AND estado = 'ABIERTO'
+        """), {"tenant_id": x_tenant_id})
+
+        # Insertar el nuevo período activo
+        ins_sql = text("""
+            INSERT INTO periodos_nomina (tenant_id, nombre_periodo, fecha_inicio, fecha_fin, estado)
+            VALUES (:tenant_id, :nombre, :f_inicio, :f_fin, 'ABIERTO')
+            RETURNING id, nombre_periodo, fecha_inicio, fecha_fin, estado, fecha_creacion
+        """)
+        res = await session.execute(ins_sql, {
+            "tenant_id": x_tenant_id,
+            "nombre": req.nombre_periodo.strip(),
+            "f_inicio": dt_inicio,
+            "f_fin": dt_fin
+        })
+        new_row = res.fetchone()
+        await session.commit()
+
+        return {
+            "message": "Período de nómina fijado exitosamente",
+            "periodo": {
+                "id": str(new_row.id),
+                "nombre_periodo": new_row.nombre_periodo,
+                "fecha_inicio": str(new_row.fecha_inicio),
+                "fecha_fin": str(new_row.fecha_fin),
+                "estado": new_row.estado,
+                "fecha_creacion": str(new_row.fecha_creacion)
+            }
+        }
+
+
 
 
 

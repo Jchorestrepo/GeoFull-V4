@@ -4,6 +4,7 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { DriverDetailModal } from '../components/personal/DriverDetailModal';
+import { NominaPersonalView } from '../components/personal/NominaPersonalView';
 import {
   Users,
   Search,
@@ -21,6 +22,7 @@ import {
 import axios from 'axios';
 
 export function PersonalPage() {
+  const [activeMainTab, setActiveMainTab] = useState('directorio');
   const [drivers, setDrivers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -34,6 +36,9 @@ export function PersonalPage() {
     cedula: '',
     telefono: '',
     tipo_contrato: 'PAQUETEO',
+    tipo_remuneracion: 'DESTAJO',
+    salario_fijo: 0,
+    periodicidad_pago: 'GLOBAL',
     tarifa_paquete: 2000
   });
   const [creating, setCreating] = useState(false);
@@ -83,6 +88,9 @@ export function PersonalPage() {
         cedula: '',
         telefono: '',
         tipo_contrato: 'PAQUETEO',
+        tipo_remuneracion: 'DESTAJO',
+        salario_fijo: 0,
+        periodicidad_pago: 'GLOBAL',
         tarifa_paquete: 2000
       });
       fetchDrivers();
@@ -173,7 +181,37 @@ export function PersonalPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Module Tabs Selector */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+        <button
+          onClick={() => setActiveMainTab('directorio')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            activeMainTab === 'directorio'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+              : 'bg-slate-900/60 text-slate-400 hover:text-white border border-white/5'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Directorio de Personal & Domiciliarios</span>
+        </button>
+
+        <button
+          onClick={() => setActiveMainTab('nomina')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+            activeMainTab === 'nomina'
+              ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20'
+              : 'bg-slate-900/60 text-slate-400 hover:text-white border border-white/5'
+          }`}
+        >
+          <DollarSign className="w-4 h-4 text-emerald-400" />
+          <span>Nómina & Vales (Por Entregas)</span>
+        </button>
+      </div>
+
+      {activeMainTab === 'nomina' ? (
+        <NominaPersonalView />
+      ) : (
+        <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
           <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
@@ -332,6 +370,8 @@ export function PersonalPage() {
           </table>
         </div>
       </GlassCard>
+        </>
+      )}
 
       {/* CREATE DRIVER MODAL */}
       {showCreateModal && (
@@ -385,22 +425,52 @@ export function PersonalPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Tipo Contrato:</label>
+                  <label className="block text-slate-400 font-semibold mb-1">Tipo Remuneración:</label>
                   <select
-                    value={newDriver.tipo_contrato}
-                    onChange={(e) => setNewDriver({ ...newDriver, tipo_contrato: e.target.value })}
+                    value={newDriver.tipo_remuneracion}
+                    onChange={(e) => setNewDriver({ ...newDriver, tipo_remuneracion: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                   >
-                    <option value="PAQUETEO">PAQUETEO</option>
-                    <option value="DIA_FIJO">DÍA FIJO</option>
-                    <option value="PRESTACION">PRESTACIÓN</option>
+                    <option value="DESTAJO">DESTAJO (Paquetes)</option>
+                    <option value="SALARIO_FIJO">SALARIO FIJO</option>
+                    <option value="MIXTO">MIXTO (Fijo + Destajo)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-semibold mb-1">Periodicidad Pago:</label>
+                  <select
+                    value={newDriver.periodicidad_pago}
+                    onChange={(e) => setNewDriver({ ...newDriver, periodicidad_pago: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                  >
+                    <option value="GLOBAL">Default Global</option>
+                    <option value="DIARIO">DIARIO</option>
+                    <option value="SEMANAL">SEMANAL</option>
+                    <option value="QUINCENAL">QUINCENAL</option>
+                    <option value="MENSUAL">MENSUAL</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 font-semibold mb-1">Salario Fijo ($):</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={newDriver.salario_fijo}
+                    onChange={(e) => setNewDriver({ ...newDriver, salario_fijo: parseFloat(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tarifa Paquete ($):</label>
                   <input
                     type="number"
+                    step="any"
                     value={newDriver.tarifa_paquete}
                     onChange={(e) => setNewDriver({ ...newDriver, tarifa_paquete: parseFloat(e.target.value) || 0 })}
                     placeholder="2000"

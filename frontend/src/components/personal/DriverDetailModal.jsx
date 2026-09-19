@@ -94,6 +94,9 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
       fecha_nacimiento: driver.fecha_nacimiento || '',
       jefe_zona: driver.jefe_zona || '',
       tipo_contrato: driver.tipo_contrato || 'PAQUETEO',
+      tipo_remuneracion: driver.tipo_remuneracion || 'DESTAJO',
+      salario_fijo: driver.salario_fijo || 0,
+      periodicidad_pago: driver.periodicidad_pago || 'GLOBAL',
       tarifa_paquete: driver.tarifa_paquete || 2000,
       activo: driver.activo !== undefined ? driver.activo : true,
 
@@ -326,6 +329,9 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
         fecha_nacimiento: formData.fecha_nacimiento || null,
         jefe_zona: formData.jefe_zona,
         tipo_contrato: formData.tipo_contrato,
+        tipo_remuneracion: formData.tipo_remuneracion,
+        salario_fijo: parseFloat(formData.salario_fijo) || 0.0,
+        periodicidad_pago: formData.periodicidad_pago,
         tarifa_paquete: parseFloat(formData.tarifa_paquete) || 0.0,
         banco: formData.banco,
         cuenta: formData.cuenta,
@@ -579,6 +585,56 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
                     <option value="PLANTA">CONTRATO DE PLANTA</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Esquema de Remuneración:
+                  </label>
+                  <select
+                    value={formData.tipo_remuneracion}
+                    onChange={(e) => setFormData({ ...formData, tipo_remuneracion: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium outline-none focus:border-blue-500"
+                  >
+                    <option value="DESTAJO">DESTAJO (Por Paquete Entregado)</option>
+                    <option value="SALARIO_FIJO">SALARIO FIJO (Sin importar entregas)</option>
+                    <option value="MIXTO">MIXTO (Sueldo Fijo + Destajo por Paquete)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Periodicidad de Pago:
+                  </label>
+                  <select
+                    value={formData.periodicidad_pago}
+                    onChange={(e) => setFormData({ ...formData, periodicidad_pago: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium outline-none focus:border-blue-500"
+                  >
+                    <option value="GLOBAL">Predeterminada de la Empresa (Global)</option>
+                    <option value="DIARIO">DIARIO</option>
+                    <option value="SEMANAL">SEMANAL</option>
+                    <option value="QUINCENAL">QUINCENAL</option>
+                    <option value="MENSUAL">MENSUAL</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Salario Fijo por Período ($ COP):
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formData.salario_fijo}
+                    onChange={(e) => setFormData({ ...formData, salario_fijo: parseFloat(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-purple-300 font-mono font-bold outline-none focus:border-blue-500"
+                  />
+                </div>
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">
@@ -586,6 +642,7 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
                   </label>
                   <input
                     type="number"
+                    step="any"
                     value={formData.tarifa_paquete}
                     onChange={(e) => setFormData({ ...formData, tarifa_paquete: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-emerald-400 font-mono font-bold outline-none focus:border-blue-500"

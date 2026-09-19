@@ -4,6 +4,7 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { RouteUploader } from '../components/reconciliation/RouteUploader';
+import { NominaLiquidacionView } from '../components/payroll/NominaLiquidacionView';
 import {
   Truck,
   CheckCircle2,
@@ -16,11 +17,13 @@ import {
   UserCheck,
   Calendar,
   AlertCircle,
-  Merge
+  Merge,
+  FileSpreadsheet
 } from 'lucide-react';
 import axios from 'axios';
 
 export function ControlConciliacionPage() {
+  const [activeMainTab, setActiveMainTab] = useState('rutas_diarias');
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [filterState, setFilterState] = useState('TODOS');
