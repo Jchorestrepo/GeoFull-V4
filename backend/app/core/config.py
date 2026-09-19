@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5433")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "geofull_v4")
 
+    # Configuración Google OAuth 2.0 & Dominio
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "1047648392019-demo.apps.googleusercontent.com")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    SUPER_ADMIN_EMAIL: str = os.getenv("SUPER_ADMIN_EMAIL", "jchorestrepo@gmail.com")
+    PUBLIC_DOMAIN: str = os.getenv("PUBLIC_DOMAIN", "dx.geofull.space")
+
     @property
     def DATABASE_URL(self) -> str:
         return (

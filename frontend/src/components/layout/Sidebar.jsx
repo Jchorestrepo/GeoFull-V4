@@ -1,5 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   MapPin,
   PackageCheck,
@@ -23,6 +24,9 @@ const NAVIGATION_ITEMS = [
 ];
 
 export function Sidebar() {
+  const { user, isImpersonating } = useAuth();
+  const canAccessSaaSAdmin = user?.rol === 'super_admin' || isImpersonating;
+
   return (
     <aside className="w-72 apple-glass h-[calc(100vh-2rem)] my-4 ml-4 rounded-3xl flex flex-col justify-between p-4 shrink-0 border border-white/10 shadow-2xl">
       <div>
@@ -73,22 +77,24 @@ export function Sidebar() {
         </nav>
       </div>
 
-      {/* SaaS Admin Button at bottom */}
-      <div className="pt-4 border-t border-white/10">
-        <NavLink
-          to="/saas-admin"
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-semibold transition-all duration-200 ${
-              isActive
-                ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40'
-                : 'bg-slate-900/40 text-slate-400 hover:text-purple-300 hover:bg-purple-950/20 border border-white/5'
-            }`
-          }
-        >
-          <ShieldAlert className="w-4 h-4 text-purple-400" />
-          <span>Consola SaaS Admin</span>
-        </NavLink>
-      </div>
+      {/* SaaS Admin Button at bottom (Super Admin Only) */}
+      {canAccessSaaSAdmin && (
+        <div className="pt-4 border-t border-white/10">
+          <NavLink
+            to="/saas-admin"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-semibold transition-all duration-200 ${
+                isActive
+                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/40'
+                  : 'bg-slate-900/40 text-slate-400 hover:text-purple-300 hover:bg-purple-950/20 border border-white/5'
+              }`
+            }
+          >
+            <ShieldAlert className="w-4 h-4 text-purple-400" />
+            <span>Consola SaaS Admin</span>
+          </NavLink>
+        </div>
+      )}
     </aside>
   );
 }

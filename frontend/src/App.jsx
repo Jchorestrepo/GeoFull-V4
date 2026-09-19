@@ -13,6 +13,14 @@ import { ConciliacionPage } from './pages/ConciliacionPage';
 import { HistorialPage } from './pages/HistorialPage';
 import { SaaSAdminPage } from './pages/SaaSAdminPage';
 
+function SuperAdminRoute({ children }) {
+  const { user, isImpersonating } = useAuth();
+  if (user?.rol !== 'super_admin' && !isImpersonating) {
+    return <Navigate to="/sectorizacion" replace />;
+  }
+  return children;
+}
+
 function MainAppContent() {
   const { user, isAuthenticated, loading } = useAuth();
 
@@ -42,7 +50,7 @@ function MainAppContent() {
           <Route path="personal" element={<PersonalPage />} />
           <Route path="conciliacion" element={<ConciliacionPage />} />
           <Route path="historial" element={<HistorialPage />} />
-          <Route path="saas-admin" element={<SaaSAdminPage />} />
+          <Route path="saas-admin" element={<SuperAdminRoute><SaaSAdminPage /></SuperAdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to={defaultHome} replace />} />
       </Routes>

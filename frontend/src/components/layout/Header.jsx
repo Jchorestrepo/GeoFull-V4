@@ -1,10 +1,17 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../ui/Badge';
 import { Building2, Bell, Sparkles, LogOut, UserCheck, ShieldAlert, RefreshCw } from 'lucide-react';
 
 export function Header() {
   const { user, activeTenantId, logout, isImpersonating, restoreSuperAdminSession } = useAuth();
+  const navigate = useNavigate();
+
+  const handleExitSupportMode = () => {
+    restoreSuperAdminSession();
+    navigate('/saas-admin');
+  };
 
   return (
     <header className="space-y-2 my-4 mr-4">
@@ -18,7 +25,7 @@ export function Header() {
             </span>
           </div>
           <button
-            onClick={restoreSuperAdminSession}
+            onClick={handleExitSupportMode}
             className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-xl text-[11px] font-bold transition-colors cursor-pointer"
           >
             Volver a Consola SaaS Admin
