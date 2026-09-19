@@ -2,7 +2,6 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import engine
 from app.api import tenants, zones, orders, reconciliation, team, maintenance, auth
@@ -14,16 +13,24 @@ async def lifespan(app: FastAPI):
     migrations_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "migrations"))
     if os.path.exists(migrations_dir):
         sql_files = sorted([f for f in os.listdir(migrations_dir) if f.endswith(".sql")])
-        async with engine.begin() as conn:
-            for sql_file in sql_files:
-                file_path = os.path.join(migrations_dir, sql_file)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        sql_content = f.read()
-                    if sql_content.strip():
-                        await conn.execute(text(sql_content))
-                except Exception as e:
-                    print(f"Aviso al aplicar migración {sql_file}: {e}")
+        for sql_file in sql_files:
+            file_path = os.path.join(migrations_dir, sql_file)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    sql_content = f.read()
+                if not sql_content.strip():
+                    continue
+                # Cada archivo en su propia transacción: un fallo no aborta los siguientes.
+                # Se usa la conexión asyncpg cruda porque text() crea un prepared statement,
+                # que no admite varios comandos en un mismo archivo.
+                async with engine.connect() as conn:
+                    raw = await conn.get_raw_connection()
+                    asyncpg_conn = raw.driver_connection
+                    async with asyncpg_conn.transaction():
+                        await asyncpg_conn.execute(sql_content)
+                print(f"Migración aplicada: {sql_file}")
+            except Exception as e:
+                print(f"Aviso al aplicar migración {sql_file}: {e}")
     yield
 
 
