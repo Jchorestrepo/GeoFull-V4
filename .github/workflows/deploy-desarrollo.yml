@@ -67,6 +67,12 @@ jobs:
 
             $CMD down || true
             $CMD up -d --build
+
+            # Importa los GPKG de backend/data/ solo si las tablas catastrales están vacías.
+            # Un fallo aquí no tumba el despliegue: los servicios ya están arriba.
+            echo "Verificando datos catastrales para geocodificación..."
+            $CMD run --rm geo-import || echo "Aviso: la importación de datos catastrales falló, revisa el log."
+
             echo "Estado de los contenedores GeoFull V4:"
             $CMD ps
 

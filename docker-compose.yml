@@ -39,6 +39,25 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-geofull_v4}
       SECRET_KEY: ${SECRET_KEY:-geofull_v4_secret_key_change_in_production_2026}
 
+  # Importador de GPKG catastrales (backend/data/) hacia PostGIS. No arranca con `up`;
+  # se ejecuta bajo demanda: docker compose run --rm geo-import
+  geo-import:
+    image: ghcr.io/osgeo/gdal:ubuntu-small-latest
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-geofull}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-geofull_secure_password_2026}
+      PGDATABASE: ${POSTGRES_DB:-geofull_v4}
+    volumes:
+      - ./backend/data:/data:ro
+      - ./backend/scripts:/scripts:ro
+    entrypoint: ["bash", "/scripts/importar_catastro.sh"]
+
   frontend:
     build:
       context: ./frontend
