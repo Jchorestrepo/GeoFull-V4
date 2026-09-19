@@ -59,10 +59,11 @@ importar() {
     fi
 
     echo "[..] Importando $src -> public.$capa ..."
-    ogr2ogr -f PostgreSQL "$PG" "$src" "$capa" \
+    # -append no admite -select; OGR SQL conserva la geometría sin nombrarla.
+    ogr2ogr -f PostgreSQL "$PG" "$src" \
         -append -nln "public.$capa" \
+        -dialect OGRSQL -sql "SELECT $campos FROM $capa" \
         -s_srs EPSG:9377 -t_srs EPSG:4326 -nlt "$tipo" \
-        -select "$campos" \
         -gt 65536 --config PG_USE_COPY YES
 
     ejecutar_sql "ANALYZE public.$capa"
