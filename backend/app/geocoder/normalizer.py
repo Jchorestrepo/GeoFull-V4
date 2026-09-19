@@ -1,6 +1,7 @@
-import re
 from dataclasses import dataclass
 from typing import Optional
+
+from normalizador.esquema import Componentes, Estado, Resultado
 
 
 @dataclass
@@ -19,136 +20,44 @@ class NormalizedAddress:
     raw_input: str = ""
 
 
-SINONIMOS_VIA = {
-    "CALLE": "CL", "CLL": "CL", "CL": "CL", "C": "CL", "KALLE": "CL", "CALL": "CL", "CLLE": "CL",
-    "CARRERA": "CR", "CRA": "CR", "CR": "CR", "KR": "CR", "KRA": "CR", "K": "CR", "KARRERA": "CR", "CRR": "CR",
-    "TRANSVERSAL": "TV", "TRANSV": "TV", "TRANS": "TV", "TV": "TV", "TR": "TV",
-    "DIAGONAL": "DG", "DIAG": "DG", "DG": "DG",
-    "CIRCULAR": "CQ", "CIRC": "CQ", "CQ": "CQ",
-    "AVENIDA": "AV", "AV": "AV"
-}
-
-# Regex Estándar con letras en vía y en generadora
-# Ejemplos: "CALLE 104B # 46A-32", "CARRERA 24B # 98-21", "CALLE 69 # 51D-27"
-RE_ESTANDAR = re.compile(
-    r'(?i)^\s*(?P<tipo>CALLE|CARRERA|CRA|CR|KR|KRA|K|CL|CLL|TRANSVERSAL|TV|TR|DIAGONAL|DG|CIRCULAR|CQ)\.?\s*'
-    r'(?P<num_via>\d+)\s*'
-    r'(?P<ap_via>[A-Za-z]{1,2})?\s*'
-    r'(?P<ori_via>SUR|ESTE|OESTE)?\s*'
-    r'(?:#|nro|no|num|con|esquina)?\s*'
-    r'(?P<gen>\d+)\s*'
-    r'(?P<ap_gen>[A-Za-z]{1,2})?\s*'
-    r'(?P<ori_gen>SUR|ESTE|OESTE)?\s*'
-    r'[-_\s/]?\s*'
-    r'(?P<casa>\d+)\b'
-)
-
-# Regex Esquina / Intersección ("Carrera 43A con Calle 10")
-RE_ESQUINA = re.compile(
-    r'(?i)^\s*(?P<tipo>CALLE|CARRERA|CRA|CR|KR|KRA|K|CL|CLL|TRANSVERSAL|TV|TR|DIAGONAL|DG|CIRCULAR|CQ)\.?\s*'
-    r'(?P<num_via>\d+)\s*'
-    r'(?P<ap_via>[A-Za-z]{1,2})?\s*'
-    r'(?:con|esquina)\s+'
-    r'(?:(?P<tipo_cruce>CALLE|CARRERA|CRA|CR|KR|KRA|K|CL|CLL|TRANSVERSAL|TV|TR|DIAGONAL|DG|CIRCULAR|CQ)\s+)?'
-    r'(?P<gen>\d+)\s*'
-    r'(?P<ap_gen>[A-Za-z]{1,2})?\b'
-)
+def _eje(numero: int, letra: Optional[str], bis: bool, cuadrante: Optional[str]) -> str:
+    partes = [f"{numero}{letra or ''}"]
+    if bis:
+        partes.append("BIS")
+    if cuadrante:
+        partes.append(cuadrante)
+    return " ".join(partes)
 
 
-def normalize_address(raw_text: str) -> Optional[NormalizedAddress]:
+def desde_resultado(resultado: Resultado) -> Optional[NormalizedAddress]:
     """
-    Convierte la dirección limpia al formato exacto para búsquedas PostGIS.
+    Adapta la salida del motor `normalizador` al formato de búsqueda del catastro PostGIS
+    (via = 'CL 20B SUR', placa = '38-06' o '18AA SUR-160').
     """
-    if not raw_text or not raw_text.strip():
+    if resultado.estado == Estado.FALLO:
+        return None
+    c: Componentes = resultado.componentes
+    if not c.via_tipo or c.via_numero is None:
         return None
 
-    texto = raw_text.upper().strip()
+    via_db = f"{c.via_tipo} {_eje(c.via_numero, c.via_letra, c.via_bis, c.via_cuadrante)}"
+    placa_db = None
+    numero_casa = None
+    if c.cruce_numero is not None and c.placa is not None:
+        placa_db = f"{_eje(c.cruce_numero, c.cruce_letra, c.cruce_bis, c.cruce_cuadrante)}-{c.placa}"
+        digitos = "".join(ch for ch in c.placa if ch.isdigit())
+        numero_casa = int(digitos) if digitos else None
 
-    # 1. Intento con Expresión Regular Estándar
-    match = RE_ESTANDAR.search(texto)
-    if match:
-        tipo_raw = match.group("tipo").upper()
-        codigo_via = SINONIMOS_VIA.get(tipo_raw, "CL")
-        num_via = int(match.group("num_via"))
-        ap_via = (match.group("ap_via") or "").upper()
-        ori_via = (match.group("ori_via") or "").upper()
-
-        gen = int(match.group("gen"))
-        ap_gen = (match.group("ap_gen") or "").upper()
-        casa = int(match.group("casa"))
-
-        via_db = f"{codigo_via} {num_via}{ap_via}".strip()
-        if ori_via:
-            via_db += f" {ori_via}"
-
-        placa_db = f"{gen}{ap_gen}-{casa}".strip()
-        direccion_db = f"{via_db} {placa_db}"
-
-        return NormalizedAddress(
-            codigo_via=codigo_via,
-            numero_via=num_via,
-            apendice_via=ap_via,
-            orientacion_via=ori_via or None,
-            via_generadora=gen,
-            apendice_generadora=ap_gen,
-            numero_casa=casa,
-            via_db=via_db,
-            placa_db=placa_db,
-            direccion_db=direccion_db,
-            raw_input=raw_text
-        )
-
-    # 2. Intento de Esquina / Intersección
-    match_esq = RE_ESQUINA.search(texto)
-    if match_esq:
-        tipo_raw = match_esq.group("tipo").upper()
-        codigo_via = SINONIMOS_VIA.get(tipo_raw, "CL")
-        num_via = int(match_esq.group("num_via"))
-        ap_via = (match_esq.group("ap_via") or "").upper()
-
-        gen = int(match_esq.group("gen"))
-        ap_gen = (match_esq.group("ap_gen") or "").upper()
-
-        via_db = f"{codigo_via} {num_via}{ap_via}".strip()
-        placa_db = f"{gen}{ap_gen}-01".strip()
-        direccion_db = f"{via_db} {placa_db}"
-
-        return NormalizedAddress(
-            codigo_via=codigo_via,
-            numero_via=num_via,
-            apendice_via=ap_via,
-            via_generadora=gen,
-            apendice_generadora=ap_gen,
-            numero_casa=1,
-            via_db=via_db,
-            placa_db=placa_db,
-            direccion_db=direccion_db,
-            raw_input=raw_text
-        )
-
-    # 3. Fallback Flexible: Extracción de los 3 primeros números si fallan expresiones complejas
-    numbers = re.findall(r"\d+", texto)
-    if len(numbers) >= 2:
-        num_via = int(numbers[0])
-        gen = int(numbers[1])
-        casa = int(numbers[2]) if len(numbers) >= 3 else 1
-        words = texto.split()
-        tipo_raw = words[0].upper() if words else "CL"
-        codigo_via = SINONIMOS_VIA.get(tipo_raw, "CL")
-
-        via_db = f"{codigo_via} {num_via}"
-        placa_db = f"{gen}-{casa}"
-        direccion_db = f"{via_db} {placa_db}"
-
-        return NormalizedAddress(
-            codigo_via=codigo_via,
-            numero_via=num_via,
-            via_generadora=gen,
-            numero_casa=casa,
-            via_db=via_db,
-            placa_db=placa_db,
-            direccion_db=direccion_db,
-            raw_input=raw_text
-        )
-
-    return None
+    return NormalizedAddress(
+        codigo_via=c.via_tipo,
+        numero_via=c.via_numero,
+        apendice_via=c.via_letra or "",
+        orientacion_via=c.via_cuadrante,
+        via_generadora=c.cruce_numero,
+        apendice_generadora=c.cruce_letra or "",
+        numero_casa=numero_casa,
+        via_db=via_db,
+        placa_db=placa_db,
+        direccion_db=f"{via_db} {placa_db}" if placa_db else via_db,
+        raw_input=resultado.entrada,
+    )

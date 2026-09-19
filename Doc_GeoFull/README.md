@@ -37,6 +37,7 @@ GeoFull V4 es una plataforma SaaS multi-tenant de logística de última milla pa
 | 📄 [06_CICD_AND_DEVOPS_SPEC.md](./06_CICD_AND_DEVOPS_SPEC.md) | Docker (3 servicios), GitHub Actions, migraciones SQL, importación GPKG con `ogr2ogr -t_srs EPSG:4326`. |
 | 📄 [07_GEOFULL_V4_STRATEGIC_BLUEPRINT.md](./07_GEOFULL_V4_STRATEGIC_BLUEPRINT.md) | Blueprint definitivo, reglas de negocio y matriz completa V3→V4. |
 | 📄 [08_GUIA_DETALLADA_VISTAS_Y_ESENCIA.md](./08_GUIA_DETALLADA_VISTAS_Y_ESENCIA.md) | Especificación detallada página por página y conservación de la esencia operativa V3➔V4. |
+| 📄 [normalizador/README.md](./normalizador/README.md) | Motor de normalización de direcciones: pipeline (limpieza, reglas, CRF, ensamblado), estados OK/PARCIAL/FALLO, integración con el geocoder y reentrenamiento. |
 
 ---
 
@@ -54,7 +55,7 @@ GeoFull V4 es una plataforma SaaS multi-tenant de logística de última milla pa
 
 4. **Sin bodegas** — cada empresa es una sola unidad operativa.
 
-5. **Sin Agente Aprendiz** — no existe motor de aprendizaje automático.
+5. **Sin Agente Aprendiz** — no hay aprendizaje en línea ni automático en producción. El único modelo es el CRF de respaldo del [Normalizador](./normalizador/README.md): es un modelo fijo que se reentrena a mano con la CLI.
 
 6. **Conciliación diaria** (archivo de entregas) + **Liquidación quincenal** (nómina por período). Se puede re-subir el documento completo de la quincena para detectar discrepancias.
 

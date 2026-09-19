@@ -1,0 +1,100 @@
+# Alias de vías del Valle de Aburrá -> nomenclatura oficial.
+#
+# PENDIENTE DE VALIDACIÓN POR EL USUARIO: cambie `validado: true` en cada entrada revisada.
+# El motor usa las entradas aunque no estén validadas, pero la confianza baja (ver alias.py).
+#
+# Campos:
+#   nombres:   formas del nombre (minúsculas, sin tildes).
+#   prefijos:  palabras que deben ir antes del nombre. Evita falsos positivos como
+#              "Medellín Colombia" -> CL 50. Por defecto: PREFIJOS_NOMBRE en alias.py.
+#   via:       {tipo, numero, letra?}
+#   ambiguo:   true si no hay una única vía equivalente (cambia de número por tramo, etc.).
+
+- nombres: ["80"]
+  prefijos: [la, avenida, av, avda]
+  via: {tipo: CR, numero: 80}
+  validado: true
+- nombres: ["70"]
+  prefijos: [la, avenida, av, avda]
+  via: {tipo: CR, numero: 70}
+  validado: true
+- nombres: ["65"]
+  prefijos: [la, avenida, av, avda]
+  via: {tipo: CR, numero: 65}
+  validado: true
+- nombres: ["33"]
+  prefijos: [la, avenida, av, avda]
+  via: {tipo: CL, numero: 33}
+  validado: true
+- nombres: ["30"]
+  prefijos: [la, avenida, av, avda]
+  via: {tipo: CL, numero: 30}
+  validado: true
+- nombres: ["10"]
+  prefijos: [la]
+  via: {tipo: CL, numero: 10}
+  validado: true
+- nombres: [oriental]
+  via: {tipo: CR, numero: 46}
+  validado: true
+- nombres: [el poblado, poblado]
+  via: {tipo: CR, numero: 43, letra: A}
+  validado: true
+- nombres: [colombia]
+  via: {tipo: CL, numero: 50}
+  validado: true
+- nombres: [san juan]
+  via: {tipo: CL, numero: 44}
+  validado: true
+- nombres: [la playa, playa]
+  via: {tipo: CL, numero: 52}
+  validado: true
+- nombres: [ferrocarril]
+  via: {tipo: CR, numero: 57}
+  validado: true
+- nombres: [las vegas]
+  via: {tipo: CR, numero: 48}
+  validado: true
+- nombres: [carabobo]
+  via: {tipo: CR, numero: 52}
+  validado: true
+- nombres: [junin]
+  via: {tipo: CR, numero: 49}
+  validado: true
+- nombres: [palace]
+  via: {tipo: CR, numero: 50}
+  validado: true
+- nombres: [bolivar]
+  via: {tipo: CR, numero: 51}
+  validado: true
+- nombres: [el palo]
+  via: {tipo: CR, numero: 45}
+  validado: true
+- nombres: [pichincha]
+  via: {tipo: CL, numero: 48}
+  validado: true
+- nombres: [ayacucho]
+  via: {tipo: CL, numero: 49}
+  validado: true
+- nombres: [boyaca]
+  via: {tipo: CL, numero: 51}
+  validado: true
+- nombres: [caracas]
+  via: {tipo: CL, numero: 54}
+  validado: true
+- nombres: [peru]
+  via: {tipo: CL, numero: 55}
+  validado: true
+- nombres: [regional]
+  ambiguo: true
+  nota: cambia de número por tramo
+  validado: true
+- nombres: [norte, sur]
+  prefijos: [autopista, au, aut]
+  ambiguo: true
+  nota: autopista sin nomenclatura numérica
+  validado: true
+- nombres: [las palmas]
+  ambiguo: true
+  nota: vía sin nomenclatura numérica única
+  validado: true

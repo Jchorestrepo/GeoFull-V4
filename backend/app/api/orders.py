@@ -6,10 +6,16 @@ from fastapi import APIRouter, HTTPException, Header, Query, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
-from app.geocoder.sanitizer import sanitize_address
-from app.geocoder.normalizer import normalize_address
+from app.geocoder.normalizer import desde_resultado
 from app.geocoder.geocoder import geocode_address
 from app.geocoder.sectorizer import sectorize_point
+from normalizador import normalizar
+from normalizador.config import cargar_config
+from normalizador.esquema import Estado
+
+_cfg_normalizador = cargar_config()
+
+PREFIJO_DESCARTADO = "descartado: "
 
 router = APIRouter(prefix="/orders", tags=["Pedidos & Geocodificación Operativa"])
 
@@ -50,6 +56,10 @@ class OrderResponse(BaseModel):
     proveedor_entrega: Optional[str] = None
     alerta_rango_logico: bool
     detalle_alerta_rango: Optional[str] = None
+    estado_normalizacion: Optional[str] = None
+    clave_direccion: Optional[str] = None
+    confianza_normalizacion: Optional[float] = None
+    advertencias_normalizacion: List[str] = []
 
 
 def _build_order_response(r) -> OrderResponse:
@@ -76,7 +86,11 @@ def _build_order_response(r) -> OrderResponse:
         pagado_conductor=r.pagado_conductor if r.pagado_conductor is not None else False,
         proveedor_entrega=r.proveedor_entrega,
         alerta_rango_logico=r.alerta_rango_logico,
-        detalle_alerta_rango=r.detalle_alerta_rango
+        detalle_alerta_rango=r.detalle_alerta_rango,
+        estado_normalizacion=r.estado_normalizacion,
+        clave_direccion=r.clave_direccion,
+        confianza_normalizacion=float(r.confianza_normalizacion) if r.confianza_normalizacion is not None else None,
+        advertencias_normalizacion=r.advertencias_normalizacion or []
     )
 
 
@@ -115,15 +129,20 @@ async def process_single_order(
     req: OrderCreateRequest,
     x_tenant_id: str = Header(..., alias="X-Tenant-ID")
 ):
-    """Procesa una guía individual: Sanitizer -> Normalizer -> Geocoder -> Sectorizer -> UPSERT en BD."""
+    """Procesa una guía individual: Normalizador -> Geocoder -> Sectorizer -> UPSERT en BD."""
     async for session in get_db_session(tenant_id=x_tenant_id):
-        sanitized = sanitize_address(req.direccion_original)
-        normalized = normalize_address(sanitized.direccion_nucleo)
+        resultado = normalizar(req.direccion_original, _cfg_normalizador)
+        normalized = desde_resultado(resultado)
         geocoded = await geocode_address(session, normalized)
         sectorized = await sectorize_point(
             session, x_tenant_id,
             geocoded.latitud, geocoded.longitud,
             normalized
+        )
+        # PARCIAL o FALLO del normalizador requieren revisión humana aunque el geocoder ubique el punto.
+        estado_pedido = sectorized.estado if resultado.estado == Estado.OK else "REQUIERE_REVISIÓN"
+        observaciones = " | ".join(
+            a[len(PREFIJO_DESCARTADO):].strip("'") for a in resultado.advertencias if a.startswith(PREFIJO_DESCARTADO)
         )
 
         geom_sql = "ST_SetSRID(ST_Point(:lon, :lat), 4326)" if geocoded.longitud and geocoded.latitud else "NULL"
@@ -136,13 +155,15 @@ async def process_single_order(
                 direccion_original, direccion_limpia, observaciones_entrega, datos_extra,
                 latitud, longitud, geom, nivel_precision, precision_metros,
                 confianza_score, zona_id, zona_nombre, estado,
-                alerta_rango_logico, detalle_alerta_rango
+                alerta_rango_logico, detalle_alerta_rango,
+                estado_normalizacion, clave_direccion, confianza_normalizacion, advertencias_normalizacion
             ) VALUES (
                 :tenant_id, :guia, :cliente, :telefono_cliente,
                 :direccion_original, :direccion_limpia, :observaciones_entrega, CAST(:datos_extra AS JSONB),
                 :latitud, :longitud, {geom_sql}, :nivel_precision, :precision_metros,
                 :confianza_score, :zona_id, :zona_nombre, :estado,
-                :alerta_rango, :detalle_alerta
+                :alerta_rango, :detalle_alerta,
+                :estado_normalizacion, :clave_direccion, :confianza_normalizacion, CAST(:advertencias_normalizacion AS JSONB)
             )
             ON CONFLICT (tenant_id, guia) DO UPDATE SET
                 cliente = COALESCE(EXCLUDED.cliente, pedidos.cliente),
@@ -162,6 +183,10 @@ async def process_single_order(
                 estado = EXCLUDED.estado,
                 alerta_rango_logico = EXCLUDED.alerta_rango_logico,
                 detalle_alerta_rango = EXCLUDED.detalle_alerta_rango,
+                estado_normalizacion = EXCLUDED.estado_normalizacion,
+                clave_direccion = EXCLUDED.clave_direccion,
+                confianza_normalizacion = EXCLUDED.confianza_normalizacion,
+                advertencias_normalizacion = EXCLUDED.advertencias_normalizacion,
                 fecha_actualizacion = CURRENT_TIMESTAMP
             RETURNING *
         """)
@@ -170,10 +195,10 @@ async def process_single_order(
             "tenant_id": x_tenant_id,
             "guia": req.guia,
             "cliente": req.cliente,
-            "telefono_cliente": req.telefono_cliente or sanitized.observaciones_entrega,
+            "telefono_cliente": req.telefono_cliente,
             "direccion_original": req.direccion_original,
-            "direccion_limpia": normalized.direccion_db if normalized else None,
-            "observaciones_entrega": sanitized.observaciones_entrega,
+            "direccion_limpia": resultado.direccion,
+            "observaciones_entrega": observaciones or None,
             "datos_extra": datos_extra_json,
             "latitud": geocoded.latitud,
             "longitud": geocoded.longitud,
@@ -184,9 +209,13 @@ async def process_single_order(
             "confianza_score": geocoded.confianza_score,
             "zona_id": sectorized.zona_id,
             "zona_nombre": sectorized.zona_nombre,
-            "estado": sectorized.estado,
+            "estado": estado_pedido,
             "alerta_rango": sectorized.alerta_rango_logico,
-            "detalle_alerta": sectorized.detalle_alerta_rango
+            "detalle_alerta": sectorized.detalle_alerta_rango,
+            "estado_normalizacion": resultado.estado.value,
+            "clave_direccion": resultado.clave,
+            "confianza_normalizacion": resultado.confianza,
+            "advertencias_normalizacion": json.dumps(resultado.advertencias, ensure_ascii=False)
         })
 
         await session.commit()

@@ -1,0 +1,24 @@
+"""Etiquetas por token, compartidas por las reglas, el CRF y el generador sintético."""
+
+VIA_TIPO = "VIA_TIPO"
+VIA_ALIAS = "VIA_ALIAS"
+VIA_NUM = "VIA_NUM"
+VIA_CRUCE = "VIA_CRUCE"  # número de vía y cruce pegados: "4523"
+VIA_LETRA = "VIA_LETRA"
+VIA_BIS = "VIA_BIS"
+VIA_CUAD = "VIA_CUAD"
+SEP = "SEP"
+CONECTOR = "CONECTOR"  # "x", "con": cruce de vías sin placa
+CRUCE_TIPO = "CRUCE_TIPO"
+CRUCE_NUM = "CRUCE_NUM"
+CRUCE_PLACA = "CRUCE_PLACA"  # número de cruce y placa pegados: "5077"
+CRUCE_LETRA = "CRUCE_LETRA"
+CRUCE_BIS = "CRUCE_BIS"
+CRUCE_CUAD = "CRUCE_CUAD"
+PLACA = "PLACA"
+RUIDO = "RUIDO"
+
+TODAS = [
+    VIA_TIPO, VIA_ALIAS, VIA_NUM, VIA_CRUCE, VIA_LETRA, VIA_BIS, VIA_CUAD, SEP, CONECTOR,
+    CRUCE_TIPO, CRUCE_NUM, CRUCE_PLACA, CRUCE_LETRA, CRUCE_BIS, CRUCE_CUAD, PLACA, RUIDO,
+]

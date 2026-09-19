@@ -1,6 +1,8 @@
 # GeoFull V4 — 05. Especificación del Frontend React, 6 Módulos Core & UI
 
 > **Propósito**: Definir la estructura exacta de interfaz de usuario de GeoFull V4 en Frontend React, basada en los **6 Módulos Centrales**, sin bodegas, con sectorización multizona simultánea, conciliación diaria y liquidación de nómina quincenal.
+>
+> **Nota**: el **Normalizador** de direcciones no es un módulo: es un componente del backend sin vista propia. Actúa durante la importación de pedidos; sus resultados (`direccion_limpia`, `estado_normalizacion`, `advertencias_normalizacion`...) llegan al frontend en `OrderResponse`. Ver [normalizador/README.md](./normalizador/README.md).
 
 ---
 

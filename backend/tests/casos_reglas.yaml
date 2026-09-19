@@ -1,0 +1,89 @@
+# Casos tabulares: entrada -> resultado esperado.
+# `direccion` null = no se espera dirección. `estado`: OK | PARCIAL | FALLO. `motivo` solo para FALLO.
+# Casos sembrados con ejemplos reales de samples/raw.csv y datos abiertos del Valle de Aburrá.
+
+# Formato limpio y variantes de separadores
+- {entrada: "CL 20B SUR 38-06", direccion: "CL 20B SUR # 38 - 06", estado: OK}
+- {entrada: "CR 63 54 SUR-10", direccion: "CR 63 # 54 SUR - 10", estado: OK}
+- {entrada: "CL 48A 1 ESTE-67", direccion: "CL 48A # 1 ESTE - 67", estado: OK}
+- {entrada: "calle 81#41-25 piso 2", direccion: "CL 81 # 41 - 25", estado: OK}
+- {entrada: "Calle 124 50e 24 Primer piso", direccion: "CL 124 # 50E - 24", estado: OK}
+- {entrada: "CL 34 SUR NO 45 40", direccion: "CL 34 SUR # 45 - 40", estado: OK}
+- {entrada: "CL 37 SUR NRO. 45A 14", direccion: "CL 37 SUR # 45A - 14", estado: OK}
+- {entrada: "Carrera 45a numer95 39", direccion: "CR 45A # 95 - 39", estado: OK}
+
+# Tipo de vía repetido o de formulario
+- {entrada: "Carrera Carrera52#109-20 Primer piso", direccion: "CR 52 # 109 - 20", estado: OK}
+- {entrada: "Calle Barrio Granizal Calle 103A 37-01 interior 107 Apartamento", direccion: "CL 103A # 37 - 01", estado: OK}
+- {entrada: "Calle 110 Calle 110 49c-35 101", direccion: "CL 110 # 49C - 35", estado: OK}
+- {entrada: "Calle Calle- 99 #51a- 66 Interior 104", direccion: "CL 99 # 51A - 66", estado: OK}
+- {entrada: "Carrera N 46 a #107 C 93-Int131 andalucia la francia", direccion: "CR 46A # 107C - 93", estado: OK}
+- {entrada: "Carrera Car 40 # 93 - 81 Casa primer piso", direccion: "CR 40 # 93 - 81", estado: OK}
+- {entrada: "K 53B  #79BB SUR 34", direccion: "CR 53B # 79BB SUR - 34", estado: OK}
+
+# Tipo del cruce escrito explícitamente
+- {entrada: "Carrera 32 #calle 84-40 interior 169", direccion: "CR 32 # 84 - 40", estado: OK}
+- {entrada: "Cr 42D CL 108 A-71( interior 101) Apartamento", direccion: "CR 42D # 108A - 71", estado: OK}
+- {entrada: "cll 108 c cr 28 c -4", direccion: "CL 108C # 28C - 04", estado: OK}
+
+# Números y letras pegados
+- {entrada: "Calle 104b #5077", direccion: "CL 104B # 50 - 77", estado: OK}
+- {entrada: "Cll103bcra50b-82 Primer piso rejas negras", direccion: "CL 103B # 50B - 82", estado: OK}
+- {entrada: "Calle CL111ACR38A15 #108-108 apartamento", direccion: "CL 111A # 38A - 15", estado: OK}
+- {entrada: "Carrera Cr51acl97-73 271", direccion: "CR 51A # 97 - 73", estado: OK}
+- {entrada: "cr 31A82-125 2", direccion: "CR 31A # 82 - 125", estado: OK}
+- {entrada: "Calle 76 Asur N° 54-146", direccion: "CL 76A SUR # 54 - 146", estado: OK}
+
+# Ruido: correos, formularios, O por cero, guiones dobles
+- {entrada: "cliente.1234@gmail.com Cra. 44 #95 -62 Barrio Manrique Villa de Guadalupe", direccion: "CR 44 # 95 - 62", estado: OK}
+- {entrada: "Carrera 50 D # 87 - 40 Apt 202, Antioquia~~~Medellin~~~~~~Carrera 50 D # 87 - 40 Apt 202", direccion: "CR 50D # 87 - 40", estado: OK}
+- {entrada: "Carrera 47 #74-O3 Local", direccion: "CR 47 # 74 - 03", estado: OK}
+- {entrada: "calle 103c #49--41 casa", direccion: "CL 103C # 49 - 41", estado: OK}
+- {entrada: "Calle 95 #44 A 68- 1 piso Apartamento", direccion: "CL 95 # 44A - 68", estado: OK}
+
+# S suelta = SUR; S pegada = letra
+- {entrada: "CR 42 B  N° 46 D S 27", direccion: "CR 42B # 46D SUR - 27", estado: OK}
+- {entrada: "CLL 36 A S N 27-A 02 FINCA 128", direccion: "CL 36A SUR # 27A - 02", estado: PARCIAL}
+- {entrada: "Carrera 64 Nro. 77 S 80, 201", direccion: "CR 64 # 77 SUR - 80", estado: OK}
+- {entrada: "Calle 45s # 23-15", direccion: "CL 45S # 23 - 15", estado: OK}
+
+# Alias
+- {entrada: "la 80 # 45-10", direccion: "CR 80 # 45 - 10", estado: OK}
+- {entrada: "AUTOPISTA NORTE COMFAMA", direccion: null, estado: FALLO, motivo: SIN_NOMENCLATURA}
+
+# PARCIAL
+- {entrada: "calle 45 bis # 23-15", direccion: "CL 45 BIS # 23 - 15", estado: PARCIAL}
+- {entrada: "CALLE 52 CON CRA 50A", direccion: "CL 52 X CR 50A", estado: PARCIAL}
+- {entrada: "CL 46 CR 78", direccion: "CL 46 X CR 78", estado: PARCIAL}
+- {entrada: "AUT NORTE CLL 58 CON 43", direccion: "CL 58 X CR 43", estado: PARCIAL}
+- {entrada: "Carrera 23 #101 ab 15-115 casa", direccion: "CR 23 # 101AB - 15", estado: PARCIAL}
+- {entrada: "Calle 79 AA S Nro. 54-10, 54-12 Apt. 201 y 301", direccion: "CL 79AA SUR # 54 - 10", estado: PARCIAL}
+- {entrada: "Calle 107b 27b-20 Santo domingo La avanzada Calle 107b 23a-26", direccion: "CL 107B # 27B - 20", estado: PARCIAL}
+- {entrada: "Av. Carrera 48a calle111 #50-interior 201 interior 201apartamento", direccion: "CR 48A # 111 - 50", estado: PARCIAL}
+- {entrada: "Carrera 24f calle 90d #137 apartamento 102", direccion: "CR 24F # 90D - 137", estado: PARCIAL}
+- {entrada: "CALLE 59 KM 9+140  AUTOPISTA NORTE", estado: PARCIAL}
+
+# Criterios del set real revisado (samples/golden_real.csv)
+- {entrada: "CL 50 FRENTE 62-43", direccion: "CL 50 # 62 - 43", estado: OK}
+- {entrada: "CR 51 FRENTE AL 47 A 53", direccion: "CR 51 # 47A - 53", estado: OK}
+- {entrada: "CRA 78 FRENTE 42+25", direccion: "CR 78 # 42 - 25", estado: OK}
+- {entrada: "CALLE 50 CON FRENTE #39-120", direccion: "CL 50 # 39 - 120", estado: OK}
+- {entrada: "Calle Cll 103 segundo piso Calle Cll 103 segundo piso #50c-48 interior", direccion: "CL 103 # 50C - 48", estado: OK}
+- {entrada: "Calle 102 #aa27-b71 piso", direccion: "CL 102AA # 27B - 71", estado: OK}
+- {entrada: "cta94#57c65(1170) casa", direccion: "CR 94 # 57C - 65", estado: OK}
+- {entrada: "Carrera 31 #7627-2 2", direccion: "CR 31 # 76 - 27", estado: PARCIAL}
+- {entrada: "C-l 99 a cr 5218 int 201 Apt 201", estado: PARCIAL}
+- {entrada: "Cl 71 A CR 28 - 05 Manrique oriental", direccion: "CL 71A # 28 - 05", estado: OK}
+- {entrada: "Calle 102 A carrera 22 d 30 interior 201 Apartamento", direccion: "CL 102A # 22D - 30", estado: OK}
+- {entrada: "Calle Cra 30 calle 111-40 Piso 1", direccion: "CR 30 # 111 - 40", estado: OK}
+- {entrada: "CRA 17 ENTRE CALLE 19 Y 20", direccion: "CR 17 X CL 19", estado: PARCIAL}
+- {entrada: "cra 17 con calle 10 #1034", direccion: "CR 17 X CL 10", estado: PARCIAL}
+- {entrada: "cr 14 Nº15", direccion: "CR 14 X CL 15", estado: PARCIAL}
+- {entrada: "Carrera 24BC  69D interior 202 casa", direccion: "CR 24BC X CL 69D", estado: PARCIAL}
+
+# FALLO
+- {entrada: "KM 10+500 DON MATIAS BELLO", direccion: null, estado: FALLO, motivo: RURAL}
+- {entrada: "VEREDA ISAZA", direccion: null, estado: FALLO, motivo: RURAL}
+- {entrada: "Sin registro", direccion: null, estado: FALLO, motivo: VACIA}
+- {entrada: "", direccion: null, estado: FALLO, motivo: VACIA}
+- {entrada: "46a#94-47", direccion: null, estado: FALLO, motivo: SIN_NOMENCLATURA}
