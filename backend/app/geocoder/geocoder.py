@@ -4,6 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 from app.geocoder.normalizer import NormalizedAddress
 
+# eje_de_nomenclatura.numero_via es smallint: un número mayor no existe en el catastro
+# y asyncpg falla al codificarlo (ej. "84122" = cruce y placa pegados).
+SMALLINT_MAX = 32767
+
+
+def _numero_valido(numero: Optional[int]) -> bool:
+    return numero is not None and 0 < numero <= SMALLINT_MAX
+
 
 @dataclass
 class GeocodeResult:
@@ -117,7 +125,7 @@ async def geocode_address(session: AsyncSession, normalized: Optional[Normalized
     # -------------------------------------------------------------------------
     # NIVEL 4: INTERSECTION_MATCH (Cruce de Vías / Esquina en Ejes Viales ±30m)
     # -------------------------------------------------------------------------
-    if normalized.numero_via and normalized.via_generadora:
+    if _numero_valido(normalized.numero_via) and _numero_valido(normalized.via_generadora):
         cruce_tipo = "CR" if normalized.codigo_via == "CL" else "CL"
         query_4 = text("""
             SELECT ST_Y(ST_Centroid(ST_Intersection(a."Shape", b."Shape"))) as lat,
@@ -143,7 +151,7 @@ async def geocode_address(session: AsyncSession, normalized: Optional[Normalized
     # -------------------------------------------------------------------------
     # NIVEL 5: VIA_ONLY (Centroide de la Calle / Carrera ±100m)
     # -------------------------------------------------------------------------
-    if normalized.codigo_via and normalized.numero_via:
+    if normalized.codigo_via and _numero_valido(normalized.numero_via):
         query_5 = text("""
             SELECT ST_Y(ST_Centroid(ST_Union("Shape"))) as lat,
                    ST_X(ST_Centroid(ST_Union("Shape"))) as lon
