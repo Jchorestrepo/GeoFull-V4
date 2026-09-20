@@ -60,6 +60,26 @@ export function NominaPersonalView() {
     }
   };
 
+  // Helper para renderizar Badge estandarizado por Banco
+  const renderBankBadge = (bankName, accountNumber) => {
+    if (!bankName) return <span className="text-slate-600 font-mono text-[10px]">Sin banco</span>;
+    const nameUpper = bankName.toUpperCase();
+
+    let colorClass = "bg-slate-800 text-slate-300 border-slate-700";
+    if (nameUpper.includes('NEQUI')) colorClass = "bg-purple-950/80 text-purple-300 border-purple-500/40";
+    else if (nameUpper.includes('BANCOLOMBIA')) colorClass = "bg-amber-950/80 text-amber-300 border-amber-500/40";
+    else if (nameUpper.includes('DAVIPLATA') || nameUpper.includes('DAVIVIENDA')) colorClass = "bg-red-950/80 text-red-300 border-red-500/40";
+    else if (nameUpper.includes('BOGOTA') || nameUpper.includes('BOGOTÁ')) colorClass = "bg-blue-950/80 text-blue-300 border-blue-500/40";
+    else if (nameUpper.includes('BBVA')) colorClass = "bg-sky-950/80 text-sky-300 border-sky-500/40";
+    else if (nameUpper.includes('NU')) colorClass = "bg-purple-900/70 text-purple-200 border-purple-400/40";
+
+    return (
+      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-bold ${colorClass}`}>
+        🏦 {bankName} {accountNumber ? `(${accountNumber})` : ''}
+      </span>
+    );
+  };
+
   const [fechaInicio, setFechaInicio] = useState(getFirstOfMonthStr());
   const [fechaFin, setFechaFin] = useState(getTodayStr());
   const [summaryData, setSummaryData] = useState(null);
@@ -415,6 +435,42 @@ export function NominaPersonalView() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 bg-slate-950 p-2 rounded-2xl border border-slate-800">
+          {savedPeriods.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-xl border border-purple-500/40">
+              <span className="text-xs text-purple-300 font-bold">Cortes:</span>
+              <select
+                value={activePeriod ? activePeriod.id : ''}
+                onChange={(e) => {
+                  const pId = e.target.value;
+                  if (pId === 'NEW') {
+                    const defaultName = formatPeriodName(fechaInicio, fechaFin);
+                    setPeriodForm({
+                      nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
+                      fecha_inicio: fechaInicio,
+                      fecha_fin: fechaFin
+                    });
+                    setShowPeriodModal(true);
+                  } else {
+                    const selected = savedPeriods.find(p => p.id === pId);
+                    if (selected) {
+                      setActivePeriod(selected);
+                      setFechaInicio(selected.fecha_inicio);
+                      setFechaFin(selected.fecha_fin);
+                    }
+                  }
+                }}
+                className="bg-slate-950 text-white font-bold text-xs px-2 py-0.5 rounded-lg border border-slate-700 outline-none focus:border-purple-500 cursor-pointer"
+              >
+                {savedPeriods.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre_periodo} ({p.fecha_inicio} a {p.fecha_fin}) [{p.estado}]
+                  </option>
+                ))}
+                <option value="NEW">➕ Crear / Fijar Nuevo Corte...</option>
+              </select>
+            </div>
+          )}
+
           <button
             onClick={() => {
               const defaultName = formatPeriodName(fechaInicio, fechaFin);
@@ -596,8 +652,9 @@ export function NominaPersonalView() {
                       <div className="font-bold text-white text-sm">
                         {item.nombre_completo}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        CC: {item.cedula} {item.banco ? `| ${item.banco} (${item.cuenta || 'Sin cuenta'})` : ''}
+                      <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                        <span>CC: {item.cedula}</span>
+                        {renderBankBadge(item.banco, item.cuenta)}
                       </div>
                     </td>
 
@@ -761,8 +818,9 @@ export function NominaPersonalView() {
               </div>
 
               {receiptItem.banco && (
-                <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-900">
-                  🏦 Pago a: {receiptItem.banco} ({receiptItem.tipo_cuenta || 'Ahorros'}) - N° {receiptItem.cuenta || 'Sin asignar'}
+                <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-900 flex items-center justify-between">
+                  <span>🏦 Pago a:</span>
+                  {renderBankBadge(receiptItem.banco, receiptItem.cuenta)}
                 </div>
               )}
             </div>

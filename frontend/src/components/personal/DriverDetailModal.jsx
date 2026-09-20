@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { GlassCard } from '../ui/GlassCard';
 import { Badge } from '../ui/Badge';
 import {
@@ -24,7 +25,24 @@ import {
   Shield,
   Check
 } from 'lucide-react';
-import axios from 'axios';
+export const STANDARD_BANKS = [
+  "Nequi",
+  "Bancolombia",
+  "Daviplata",
+  "Banco de Bogotá",
+  "Davivienda",
+  "BBVA Colombia",
+  "Banco Agrario",
+  "Banco Popular",
+  "Scotiabank Colpatria",
+  "Banco Itaú",
+  "Lulo Bank",
+  "Nu Bank (Nubank)",
+  "RappiPay",
+  "Banco AV Villas",
+  "Banco Caja Social",
+  "Efectivo / Entrega Manual"
+];
 
 export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
   const [activeTab, setActiveTab] = useState('personal');
@@ -133,6 +151,7 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
   const [newRutFileName, setNewRutFileName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [isCustomBank, setIsCustomBank] = useState(false);
 
   // Auto update nombre_completo when nombres/apellidos change
   const handleNameChange = (field, value) => {
@@ -187,9 +206,9 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
   // Bank Accounts helpers
   const addCuentaBancaria = () => {
     const nuevaCuenta = {
-      banco: formData.banco || '',
-      cuenta: formData.cuenta || '',
-      tipo_cuenta: formData.tipo_cuenta || 'Ahorros',
+      banco: '',
+      cuenta: '',
+      tipo_cuenta: 'Ahorros',
       cc_titular: formData.cc_titular || formData.cedula || ''
     };
     setFormData(prev => ({
@@ -324,7 +343,7 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
         nombre_completo: formData.nombre_completo.trim(),
         nombres: formData.nombres.trim(),
         apellidos: formData.apellidos.trim(),
-        cedula: formData.cedula.strip ? formData.cedula.strip() : formData.cedula.trim(),
+        cedula: typeof formData.cedula === 'string' ? formData.cedula.trim() : formData.cedula,
         telefono: formData.telefono,
         fecha_nacimiento: formData.fecha_nacimiento || null,
         jefe_zona: formData.jefe_zona,
@@ -685,14 +704,50 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-slate-400 font-semibold mb-1">Banco</label>
-                    <input
-                      type="text"
-                      value={formData.banco}
-                      onChange={(e) => setFormData({ ...formData, banco: e.target.value })}
-                      placeholder="Ej: Bancolombia, Nequi..."
-                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none focus:border-blue-500"
-                    />
+                    <label className="block text-slate-400 font-semibold mb-1">Banco Principal (*)</label>
+                    {!isCustomBank ? (
+                      <select
+                        value={formData.banco}
+                        onChange={(e) => {
+                          if (e.target.value === 'ADD_NEW') {
+                            setIsCustomBank(true);
+                            setFormData({ ...formData, banco: '' });
+                          } else {
+                            setFormData({ ...formData, banco: e.target.value });
+                          }
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-medium outline-none focus:border-blue-500 cursor-pointer text-xs"
+                      >
+                        <option value="">-- Seleccionar Banco --</option>
+                        {STANDARD_BANKS.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                        {formData.banco && !STANDARD_BANKS.includes(formData.banco) && (
+                          <option value={formData.banco}>{formData.banco}</option>
+                        )}
+                        <option value="ADD_NEW">➕ Escribir / Crear Nuevo Banco...</option>
+                      </select>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={formData.banco}
+                          onChange={(e) => setFormData({ ...formData, banco: e.target.value })}
+                          placeholder="Nombre del nuevo banco..."
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-blue-500 text-white outline-none font-medium text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomBank(false)}
+                          className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 whitespace-nowrap"
+                        >
+                          Lista
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-slate-400 font-semibold mb-1">Cédula Titular (CC)</label>
@@ -771,14 +826,47 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-slate-400 font-semibold mb-1">Banco</label>
-                            <input
-                              type="text"
-                              value={cuenta.banco}
-                              onChange={(e) => updateCuentaBancaria(idx, 'banco', e.target.value)}
-                              placeholder="Ej: Davivienda, Nequi..."
-                              className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
-                            />
+                            <label className="block text-slate-400 font-semibold mb-1 text-xs">Banco (*)</label>
+                            {!cuenta._isCustom && (STANDARD_BANKS.includes(cuenta.banco) || !cuenta.banco) ? (
+                              <select
+                                value={cuenta.banco || ''}
+                                onChange={(e) => {
+                                  if (e.target.value === 'ADD_NEW') {
+                                    updateCuentaBancaria(idx, '_isCustom', true);
+                                    updateCuentaBancaria(idx, 'banco', '');
+                                  } else {
+                                    updateCuentaBancaria(idx, 'banco', e.target.value);
+                                  }
+                                }}
+                                className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-medium outline-none focus:border-blue-500 cursor-pointer text-xs"
+                              >
+                                <option value="">-- Seleccionar Banco --</option>
+                                {STANDARD_BANKS.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                                <option value="ADD_NEW">➕ Escribir / Crear Nuevo Banco...</option>
+                              </select>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={cuenta.banco || ''}
+                                  onChange={(e) => updateCuentaBancaria(idx, 'banco', e.target.value)}
+                                  placeholder="Nombre del banco..."
+                                  className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-blue-500 text-white outline-none font-medium text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateCuentaBancaria(idx, '_isCustom', false)}
+                                  className="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 whitespace-nowrap"
+                                >
+                                  Lista
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label className="block text-slate-400 font-semibold mb-1">Cédula Titular (CC)</label>

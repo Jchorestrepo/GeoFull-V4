@@ -932,7 +932,8 @@ async def get_payroll_summary(
 
             # Verificar si ya existe registro de liquidación guardado/pagado
             liq_sql = text("""
-                SELECT estado_pago, metodo_pago, referencia_pago, fecha_pago
+                SELECT estado_pago, metodo_pago, referencia_pago, fecha_pago,
+                       total_paquetes_periodo, monto_neto, monto_bruto, vales_descontados, bonos, penalidades
                 FROM liquidaciones
                 WHERE tenant_id = :tenant_id
                   AND domiciliario_id = :dom_id
@@ -953,6 +954,14 @@ async def get_payroll_summary(
                 metodo_pago = liq_row.metodo_pago
                 referencia_pago = liq_row.referencia_pago
                 fecha_pago = str(liq_row.fecha_pago) if liq_row.fecha_pago else None
+
+                if liq_row.estado_pago == "PAGADO":
+                    total_entregados = liq_row.total_paquetes_periodo if liq_row.total_paquetes_periodo is not None else total_entregados
+                    monto_neto = float(liq_row.monto_neto) if liq_row.monto_neto is not None else monto_neto
+                    monto_bruto = float(liq_row.monto_bruto) if liq_row.monto_bruto is not None else monto_bruto
+                    vales = float(liq_row.vales_descontados) if liq_row.vales_descontados is not None else vales
+                    bonos = float(liq_row.bonos) if liq_row.bonos is not None else bonos
+                    penalidades = float(liq_row.penalidades) if liq_row.penalidades is not None else penalidades
 
             payroll_rows.append({
                 "domiciliario_id": str(d_id),
@@ -1173,6 +1182,9 @@ async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
             formatted.append(p_dict)
             if p["estado"] == "ABIERTO" and not active_period:
                 active_period = p_dict
+
+        if not active_period and formatted:
+            active_period = formatted[0]
 
         return {
             "periodos": formatted,
