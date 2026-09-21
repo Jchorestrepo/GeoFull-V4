@@ -4,10 +4,11 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { DatasetUploaderModal } from '../components/saas/DatasetUploaderModal';
+import { TenantColumnMappingModal } from '../components/saas/TenantColumnMappingModal';
 import {
   ShieldAlert, Building2, Plus, LogIn, RefreshCw, BarChart3,
   Map, Layers, CheckCircle2, AlertTriangle, Edit3, Power,
-  Database, Activity, Server, Users, Search
+  Database, Activity, Server, Users, Search, FileSpreadsheet
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -28,6 +29,11 @@ export function SaaSAdminPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDatasetModal, setShowDatasetModal] = useState(false);
+
+  // Column Mapping modal
+  const [showMappingModal, setShowMappingModal] = useState(false);
+  const [mappingTenant, setMappingTenant] = useState(null);
+
 
   // Forms
   const [form, setForm] = useState({
@@ -164,6 +170,17 @@ export function SaaSAdminPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setMappingTenant({ id: 'global', nombre: 'Configuración Global (Todas las Empresas)' });
+              setShowMappingModal(true);
+            }}
+            className="flex items-center gap-2 py-2 px-3.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all cursor-pointer shadow-md shadow-purple-500/10"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-purple-400" />
+            Plantillas Globales (+)
+          </button>
+
           <button
             onClick={() => setShowDatasetModal(true)}
             className="flex items-center gap-2 py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer"
@@ -400,6 +417,15 @@ export function SaaSAdminPage() {
                       >
                         <LogIn className="w-3.5 h-3.5" />
                         Modo Soporte
+                      </button>
+
+                      <button
+                        onClick={() => { setMappingTenant(t); setShowMappingModal(true); }}
+                        title="Configurar Plantillas de Importación"
+                        className="p-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        <span className="hidden sm:inline">Plantillas (+)</span>
                       </button>
 
                       <button
@@ -650,7 +676,19 @@ export function SaaSAdminPage() {
         }}
       />
 
+      {/* MODAL: PLANTILLAS DE MAPEO POR EMPRESA */}
+      <TenantColumnMappingModal
+        tenant={mappingTenant}
+        isOpen={showMappingModal}
+        onClose={() => { setShowMappingModal(false); setMappingTenant(null); }}
+        onSuccess={(msg) => {
+          setToast({ type: 'success', message: msg });
+          loadAllData();
+        }}
+      />
+
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }
+

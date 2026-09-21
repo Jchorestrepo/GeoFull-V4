@@ -268,6 +268,7 @@ export function SectorizacionPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40">
+                  <th className="p-3">Empresa</th>
                   <th className="p-3">Guía</th>
                   <th className="p-3">Dirección</th>
                   <th className="p-3">Cliente</th>
@@ -279,13 +280,18 @@ export function SectorizacionPage() {
               <tbody className="divide-y divide-white/5 text-xs">
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500 text-xs">
+                    <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
                       No hay pedidos cargados en la zona seleccionada. Usa el botón "Importar Pedidos / Zonas".
                     </td>
                   </tr>
                 ) : (
                   filteredOrders.map((o) => (
                     <tr key={o.id} className="hover:bg-slate-800/30 transition-all">
+                      <td className="p-3">
+                        <Badge variant="purple" className="text-[10px] font-mono uppercase">
+                          {o.tenant_id || activeTenantId || 'Empresa'}
+                        </Badge>
+                      </td>
                       <td className="p-3 font-mono font-bold text-blue-400">{o.guia}</td>
                       <td className="p-3">
                         <div className="font-medium text-slate-200">{o.direccion_limpia || o.direccion_original}</div>

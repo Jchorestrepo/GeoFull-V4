@@ -211,42 +211,172 @@ async def toggle_tenant_status(tenant_id: str, activo: bool, admin: dict = Depen
         return {"status": "ok", "id": r.id, "nombre": r.nombre, "activo": r.activo}
 
 
-class ColumnMappingRequest(BaseModel):
-    guia: str
-    direccion_original: str
+DEFAULT_COLUMN_MAPPING = {
+    "plantillas_sectorizacion": [
+        {
+            "id": "std_sectorizacion_es",
+            "nombre": "iMile / Estándar Sectorización (Español)",
+            "guia": "Guía",
+            "direccion_original": "Dirección",
+            "cliente": "Cliente",
+            "telefono_cliente": "Teléfono"
+        },
+        {
+            "id": "std_sectorizacion_en",
+            "nombre": "iMile / Standard Sectorization (English)",
+            "guia": "Waybill No.",
+            "direccion_original": "Destination Address",
+            "cliente": "Customer Name",
+            "telefono_cliente": "Phone"
+        }
+    ],
+    "plantillas_conciliacion": [
+        {
+            "id": "std_conciliacion_es",
+            "nombre": "Rutas iMile / Conciliación Estándar",
+            "route_guia": "Waybill No.",
+            "route_da": "DA Name",
+            "route_time": "Delivered time"
+        }
+    ]
+}
+
+
+class ColumnMappingVariant(BaseModel):
+    id: str
+    nombre: str
+    guia: Optional[str] = None
+    direccion_original: Optional[str] = None
     cliente: Optional[str] = None
     telefono_cliente: Optional[str] = None
+    route_guia: Optional[str] = None
+    route_da: Optional[str] = None
+    route_time: Optional[str] = None
 
 
+class MultiColumnMappingRequest(BaseModel):
+    plantillas_sectorizacion: Optional[List[Dict[str, Any]]] = None
+    plantillas_conciliacion: Optional[List[Dict[str, Any]]] = None
+    # Soporte retrocompatible para envío plano
+    guia: Optional[str] = None
+    direccion_original: Optional[str] = None
+    cliente: Optional[str] = None
+    telefono_cliente: Optional[str] = None
+    route_guia: Optional[str] = None
+    route_da: Optional[str] = None
+    route_time: Optional[str] = None
+
+
+@router.get("/global/column-mapping")
 @router.get("/{tenant_id}/column-mapping")
 async def get_column_mapping(tenant_id: str):
-    """Obtiene la configuración de mapeo de columnas previamente guardada para la empresa."""
+    """Obtiene las plantillas de mapeo de columnas configuradas a nivel global o por empresa."""
     async for session in get_db_session():
         query = text("SELECT mapeo_columnas FROM public.empresas WHERE id = :id LIMIT 1")
         res = await session.execute(query, {"id": tenant_id})
         row = res.first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Empresa no encontrada")
-        return row.mapeo_columnas or {}
+
+        # Si no se encuentra para el tenant específico, buscar en 'global'
+        if not row and tenant_id != "global":
+            res_global = await session.execute(query, {"id": "global"})
+            row = res_global.first()
+
+        saved = row.mapeo_columnas if row else {}
+        if not isinstance(saved, dict):
+            saved = {}
+
+        # Normalizar a estructura multi-plantilla
+        sect_templates = saved.get("plantillas_sectorizacion")
+        concil_templates = saved.get("plantillas_conciliacion")
+
+        if not sect_templates or not isinstance(sect_templates, list):
+            sect_templates = list(DEFAULT_COLUMN_MAPPING["plantillas_sectorizacion"])
+            if saved.get("guia") and saved.get("direccion_original"):
+                legacy_var = {
+                    "id": "legacy_custom",
+                    "nombre": "Configuración Anterior Guardada",
+                    "guia": saved["guia"],
+                    "direccion_original": saved["direccion_original"],
+                    "cliente": saved.get("cliente", ""),
+                    "telefono_cliente": saved.get("telefono_cliente", "")
+                }
+                sect_templates.insert(0, legacy_var)
+
+        if not concil_templates or not isinstance(concil_templates, list):
+            concil_templates = list(DEFAULT_COLUMN_MAPPING["plantillas_conciliacion"])
+            if saved.get("route_guia") and saved.get("route_da"):
+                legacy_concil = {
+                    "id": "legacy_concil_custom",
+                    "nombre": "Rutas Anterior Guardado",
+                    "route_guia": saved["route_guia"],
+                    "route_da": saved["route_da"],
+                    "route_time": saved.get("route_time", "")
+                }
+                concil_templates.insert(0, legacy_concil)
+
+        return {
+            "plantillas_sectorizacion": sect_templates,
+            "plantillas_conciliacion": concil_templates
+        }
 
 
+@router.post("/global/column-mapping")
 @router.post("/{tenant_id}/column-mapping")
-async def save_column_mapping(tenant_id: str, mapping: ColumnMappingRequest):
-    """Guarda o actualiza la configuración de mapeo de columnas para una empresa."""
+async def save_column_mapping(tenant_id: str, mapping: MultiColumnMappingRequest):
+    """Guarda o actualiza las plantillas de mapeo de columnas globales o específicas."""
     import json
     async for session in get_db_session():
-        query = text("""
+        check_sql = text("SELECT id, mapeo_columnas FROM public.empresas WHERE id = :id LIMIT 1")
+        res_check = await session.execute(check_sql, {"id": tenant_id})
+        row = res_check.first()
+
+        # Si es tenant 'global' y no existe en BD, insertarlo automáticamente
+        if not row and tenant_id == "global":
+            await session.execute(text("""
+                INSERT INTO public.empresas (id, nombre, nit, email_contacto, cuota_pedidos_mes)
+                VALUES ('global', 'Configuración Global SaaS', '000000000-0', 'admin@geofull.com', 99999999)
+                ON CONFLICT (id) DO NOTHING
+            """))
+            await session.commit()
+            res_check = await session.execute(check_sql, {"id": tenant_id})
+            row = res_check.first()
+        elif not row:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+        curr_data = row.mapeo_columnas if row else {}
+        if not isinstance(curr_data, dict):
+            curr_data = {}
+
+        req_dict = mapping.model_dump(exclude_unset=True)
+
+        if "plantillas_sectorizacion" in req_dict and req_dict["plantillas_sectorizacion"] is not None:
+            curr_data["plantillas_sectorizacion"] = req_dict["plantillas_sectorizacion"]
+
+        if "plantillas_conciliacion" in req_dict and req_dict["plantillas_conciliacion"] is not None:
+            curr_data["plantillas_conciliacion"] = req_dict["plantillas_conciliacion"]
+
+        # Si vienen campos legacy
+        if req_dict.get("guia"):
+            curr_data["guia"] = req_dict["guia"]
+        if req_dict.get("direccion_original"):
+            curr_data["direccion_original"] = req_dict["direccion_original"]
+        if req_dict.get("cliente") is not None:
+            curr_data["cliente"] = req_dict["cliente"]
+        if req_dict.get("telefono_cliente") is not None:
+            curr_data["telefono_cliente"] = req_dict["telefono_cliente"]
+
+        update_sql = text("""
             UPDATE public.empresas
-            SET mapeo_columnas = :mapping
+            SET mapeo_columnas = CAST(:mapping AS JSONB)
             WHERE id = :id
             RETURNING id, mapeo_columnas
         """)
-        res = await session.execute(query, {
+        res_up = await session.execute(update_sql, {
             "id": tenant_id,
-            "mapping": json.dumps(mapping.model_dump())
+            "mapping": json.dumps(curr_data, ensure_ascii=False)
         })
         await session.commit()
-        row = res.first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Empresa no encontrada")
-        return {"status": "ok", "mapeo_columnas": row.mapeo_columnas}
+        up_row = res_up.first()
+        return {"status": "ok", "mapeo_columnas": up_row.mapeo_columnas if up_row else curr_data}
+
+
