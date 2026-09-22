@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from app.core.database import get_db_session
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
+from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Autenticación & Sesiones"])
 
@@ -188,8 +189,8 @@ async def google_login(req: GoogleAuthRequest):
     if not email:
         raise HTTPException(status_code=401, detail="Token de Google no válido o no fue posible obtener el correo.")
 
-    # Regla Especial Super Admin: jchorestrepo@gmail.com
-    is_super_admin = (email == "jchorestrepo@gmail.com")
+    # Regla Especial Super Admin: verificar contra lista de super admins configurados
+    is_super_admin = (email.lower() in settings.super_admin_emails_list)
 
     async for session in get_db_session():
         sql = text("""

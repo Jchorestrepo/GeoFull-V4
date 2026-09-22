@@ -7,15 +7,15 @@ services:
     restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-geofull_v4}
-      POSTGRES_USER: ${POSTGRES_USER:-geofull}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geofull_secure_password_2026}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgis_secure_pass_2026}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-geofull} -d ${POSTGRES_DB:-geofull_v4}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-geofull_v4}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -34,8 +34,8 @@ services:
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-geofull}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geofull_secure_password_2026}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgis_secure_pass_2026}
       POSTGRES_DB: ${POSTGRES_DB:-geofull_v4}
       SECRET_KEY: ${SECRET_KEY:-geofull_v4_secret_key_change_in_production_2026}
 
@@ -50,8 +50,8 @@ services:
     environment:
       PGHOST: db
       PGPORT: 5432
-      PGUSER: ${POSTGRES_USER:-geofull}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-geofull_secure_password_2026}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgis_secure_pass_2026}
       PGDATABASE: ${POSTGRES_DB:-geofull_v4}
     volumes:
       - ./backend/data:/data:ro
