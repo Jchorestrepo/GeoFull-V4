@@ -82,7 +82,7 @@ export function ExcelUploader({ onBatchComplete }) {
         if (!matchedVariant) {
           // Ninguna plantilla coincide -> BLOQUEAR IMPORTACIÓN Y ALERTAR AL USUARIO
           setErrorModal(
-            `El archivo subido ("${selected.name}") no coincide con ninguna de las plantillas de importación configuradas para la empresa activa. Por favor verifica que estés subiendo el archivo correcto o agrega la plantilla en la Consola SaaS.`
+            `El archivo subido ("${selected.name}") no coincide con ninguna de las plantillas globales de importación configuradas en la Consola SaaS. Por favor verifica que estés subiendo el archivo correcto o agrega la plantilla en la Consola SaaS.`
           );
           setFile(null);
           return;

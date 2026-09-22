@@ -69,14 +69,26 @@ export function SaaSAdminPage() {
   }, []);
 
   // Crear Tenant
+  const handleOpenCreateModal = () => {
+    const autoId = 'emp_' + Math.random().toString(36).substring(2, 10);
+    setForm({
+      id: autoId,
+      nombre: '',
+      nit: '',
+      email_contacto: '',
+      telefono: '',
+      cuota_pedidos_mes: 10000
+    });
+    setShowCreateModal(true);
+  };
+
   const handleCreateTenant = async (e) => {
     e.preventDefault();
-    if (!form.id.trim() || !form.nombre.trim()) return;
+    if (!form.nombre.trim()) return;
 
     try {
       await axios.post(`${API_BASE}/tenants/`, form);
       setShowCreateModal(false);
-      setForm({ id: '', nombre: '', nit: '', email_contacto: '', telefono: '', cuota_pedidos_mes: 10000 });
       setToast({ type: 'success', message: `Empresa "${form.nombre}" creada exitosamente` });
       loadAllData();
     } catch (err) {
@@ -190,7 +202,7 @@ export function SaaSAdminPage() {
           </button>
 
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleOpenCreateModal}
             className="flex items-center gap-2 py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-500/25 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -420,15 +432,6 @@ export function SaaSAdminPage() {
                       </button>
 
                       <button
-                        onClick={() => { setMappingTenant(t); setShowMappingModal(true); }}
-                        title="Configurar Plantillas de Importación"
-                        className="p-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 rounded-xl transition-all cursor-pointer flex items-center gap-1 text-xs font-semibold"
-                      >
-                        <FileSpreadsheet className="w-4 h-4" />
-                        <span className="hidden sm:inline">Plantillas (+)</span>
-                      </button>
-
-                      <button
                         onClick={() => handleOpenEdit(t)}
                         title="Editar Empresa y Cuota"
                         className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition-all cursor-pointer"
@@ -532,26 +535,24 @@ export function SaaSAdminPage() {
             <h3 className="font-bold text-base text-white">Registrar Empresa SaaS</h3>
             <form onSubmit={handleCreateTenant} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">ID Slug de la Empresa *</label>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Nombre Comercial de la Empresa *</label>
                 <input
                   type="text"
-                  placeholder="ej. coordinadora"
-                  value={form.id}
-                  onChange={e => setForm({...form, id: e.target.value.toLowerCase().trim()})}
+                  placeholder="ej. DeXpress Colombia SAS"
+                  value={form.nombre}
+                  onChange={e => setForm({...form, nombre: e.target.value})}
                   className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Nombre Comercial *</label>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">ID Interno Alfanumérico (Auto-generado)</label>
                 <input
                   type="text"
-                  placeholder="ej. Coordinadora Express S.A.S."
-                  value={form.nombre}
-                  onChange={e => setForm({...form, nombre: e.target.value})}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
-                  required
+                  value={form.id}
+                  readOnly
+                  className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-purple-400 font-mono focus:outline-none cursor-not-allowed text-xs font-bold"
                 />
               </div>
 

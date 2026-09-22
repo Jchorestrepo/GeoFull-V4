@@ -16,7 +16,7 @@ def require_super_admin(authorization: Optional[str] = Header(None)):
     if not payload or "user" not in payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
     user = payload["user"]
-    if user.get("rol") != "super_admin":
+    if user.get("rol") != "super_admin" and not user.get("is_impersonating"):
         raise HTTPException(
             status_code=403,
             detail="Acceso denegado. Se requieren permisos de Super Admin Global para esta acción."
@@ -25,7 +25,7 @@ def require_super_admin(authorization: Optional[str] = Header(None)):
 
 
 class TenantCreate(BaseModel):
-    id: str
+    id: Optional[str] = None
     nombre: str
     nit: str
     email_contacto: EmailStr
@@ -132,9 +132,14 @@ async def list_tenants(admin: dict = Depends(require_super_admin)):
 @router.post("/", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(req: TenantCreate, admin: dict = Depends(require_super_admin)):
     """Crea una nueva empresa en la plataforma SaaS."""
+    import uuid
+    tenant_id = (req.id or "").strip().lower()
+    if not tenant_id:
+        tenant_id = f"emp_{uuid.uuid4().hex[:8]}"
+
     async for session in get_db_session():
         check_query = text("SELECT id FROM public.empresas WHERE id = :id OR nit = :nit LIMIT 1")
-        res_check = await session.execute(check_query, {"id": req.id, "nit": req.nit})
+        res_check = await session.execute(check_query, {"id": tenant_id, "nit": req.nit})
         if res_check.first():
             raise HTTPException(status_code=400, detail="El ID o NIT ya se encuentra registrado")
 
@@ -144,7 +149,7 @@ async def create_tenant(req: TenantCreate, admin: dict = Depends(require_super_a
             RETURNING id, nombre, nit, email_contacto, telefono, cuota_pedidos_mes, activo
         """)
         res = await session.execute(insert_query, {
-            "id": req.id.lower().strip(),
+            "id": tenant_id,
             "nombre": req.nombre,
             "nit": req.nit,
             "email_contacto": req.email_contacto,
@@ -270,18 +275,13 @@ class MultiColumnMappingRequest(BaseModel):
 @router.get("/global/column-mapping")
 @router.get("/{tenant_id}/column-mapping")
 async def get_column_mapping(tenant_id: str):
-    """Obtiene las plantillas de mapeo de columnas configuradas a nivel global o por empresa."""
+    """Obtiene las plantillas de mapeo de columnas globales que aplican a todas las empresas."""
     async for session in get_db_session():
-        query = text("SELECT mapeo_columnas FROM public.empresas WHERE id = :id LIMIT 1")
-        res = await session.execute(query, {"id": tenant_id})
+        query = text("SELECT mapeo_columnas FROM public.empresas WHERE id = 'global' LIMIT 1")
+        res = await session.execute(query)
         row = res.first()
 
-        # Si no se encuentra para el tenant específico, buscar en 'global'
-        if not row and tenant_id != "global":
-            res_global = await session.execute(query, {"id": "global"})
-            row = res_global.first()
-
-        saved = row.mapeo_columnas if row else {}
+        saved = row.mapeo_columnas if (row and row.mapeo_columnas) else {}
         if not isinstance(saved, dict):
             saved = {}
 
@@ -323,27 +323,26 @@ async def get_column_mapping(tenant_id: str):
 @router.post("/global/column-mapping")
 @router.post("/{tenant_id}/column-mapping")
 async def save_column_mapping(tenant_id: str, mapping: MultiColumnMappingRequest):
-    """Guarda o actualiza las plantillas de mapeo de columnas globales o específicas."""
+    """Guarda o actualiza las plantillas de mapeo de columnas a nivel global."""
     import json
+    target_id = "global"
     async for session in get_db_session():
         check_sql = text("SELECT id, mapeo_columnas FROM public.empresas WHERE id = :id LIMIT 1")
-        res_check = await session.execute(check_sql, {"id": tenant_id})
+        res_check = await session.execute(check_sql, {"id": target_id})
         row = res_check.first()
 
-        # Si es tenant 'global' y no existe en BD, insertarlo automáticamente
-        if not row and tenant_id == "global":
+        # Si no existe en BD el registro 'global', insertarlo automáticamente
+        if not row:
             await session.execute(text("""
                 INSERT INTO public.empresas (id, nombre, nit, email_contacto, cuota_pedidos_mes)
                 VALUES ('global', 'Configuración Global SaaS', '000000000-0', 'admin@geofull.com', 99999999)
                 ON CONFLICT (id) DO NOTHING
             """))
             await session.commit()
-            res_check = await session.execute(check_sql, {"id": tenant_id})
+            res_check = await session.execute(check_sql, {"id": target_id})
             row = res_check.first()
-        elif not row:
-            raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-        curr_data = row.mapeo_columnas if row else {}
+        curr_data = row.mapeo_columnas if (row and row.mapeo_columnas) else {}
         if not isinstance(curr_data, dict):
             curr_data = {}
 
@@ -372,7 +371,7 @@ async def save_column_mapping(tenant_id: str, mapping: MultiColumnMappingRequest
             RETURNING id, mapeo_columnas
         """)
         res_up = await session.execute(update_sql, {
-            "id": tenant_id,
+            "id": target_id,
             "mapping": json.dumps(curr_data, ensure_ascii=False)
         })
         await session.commit()

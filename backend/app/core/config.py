@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "1047648392019-demo.apps.googleusercontent.com")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     SUPER_ADMIN_EMAIL: str = os.getenv("SUPER_ADMIN_EMAIL", "jchorestrepo@gmail.com")
-    SUPER_ADMIN_EMAILS: str = os.getenv("SUPER_ADMIN_EMAILS", "jchorestrepo@gmail.com")
-    PUBLIC_DOMAIN: str = os.getenv("PUBLIC_DOMAIN", "dx.geofull.space")
+    SUPER_ADMIN_EMAILS: str = os.getenv("SUPER_ADMIN_EMAILS", "jchorestrepo@gmail.com,jchorestrepo611@gmail.com,mateoyaleja88@gmail.com,admin@geofull.app")
+    PUBLIC_DOMAIN: str = os.getenv("PUBLIC_DOMAIN", "sur.geofull.space")
 
     @property
     def super_admin_emails_list(self) -> list:

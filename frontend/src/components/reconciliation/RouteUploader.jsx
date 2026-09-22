@@ -82,7 +82,7 @@ export function RouteUploader({ onBatchComplete }) {
         if (!matchedVariant) {
           // Ninguna plantilla coincide -> BLOQUEAR IMPORTACIÓN Y ALERTAR AL USUARIO
           setErrorModal(
-            `El archivo subido ("${selected.name}") no coincide con ninguna de las plantillas de conciliación/rutas configuradas para la empresa activa. Por favor verifica que sea el archivo correcto o agrega la plantilla en la Consola SaaS.`
+            `El archivo subido ("${selected.name}") no coincide con ninguna de las plantillas globales de conciliación/rutas configuradas en la Consola SaaS. Por favor verifica que sea el archivo correcto o agrega la plantilla en la Consola SaaS.`
           );
           setFile(null);
           return;

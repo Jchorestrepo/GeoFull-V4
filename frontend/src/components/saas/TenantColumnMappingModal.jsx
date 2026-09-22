@@ -187,7 +187,7 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
   };
 
   const handleDeleteVariant = async (tabKey, variantId) => {
-    if (!confirm("¿Deseas eliminar esta plantilla de la empresa?")) return;
+    if (!confirm("¿Deseas eliminar esta plantilla global?")) return;
 
     const updatedSect = tabKey === 'sectorizacion'
       ? templates.plantillas_sectorizacion.filter(t => t.id !== variantId)
@@ -207,7 +207,7 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
         plantillas_sectorizacion: sectList,
         plantillas_conciliacion: concilList
       };
-      await axios.post(`${API_BASE}/tenants/${tenant.id}/column-mapping`, payload);
+      await axios.post(`${API_BASE}/tenants/global/column-mapping`, payload);
       setTemplates({
         plantillas_sectorizacion: sectList,
         plantillas_conciliacion: concilList
@@ -227,12 +227,17 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
     setSampleHeaders([]);
     setSampleRows([]);
     setNewVariant({
-      nombre: '', guia: '', direccion_original: '', cliente: '', telefono_cliente: '',
-      route_guia: '', route_da: '', route_time: ''
+      nombre: '',
+      guia: '',
+      direccion_original: '',
+      cliente: '',
+      telefono_cliente: '',
+      route_guia: '',
+      route_da: '',
+      route_time: ''
     });
   };
 
-  // Helper para obtener 5 filas de muestra de una columna elegida
   const renderColumnDataPreview = (colName) => {
     if (!colName || sampleRows.length === 0) return null;
     const previews = sampleRows.map(r => r[colName]).filter(v => v !== undefined && v !== '');
@@ -266,11 +271,11 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-lg text-white tracking-tight">Plantillas de Importación</h3>
-                <Badge variant="purple">{tenant.nombre}</Badge>
+                <h3 className="font-extrabold text-lg text-white tracking-tight">Plantillas Globales de Mapeo</h3>
+                <Badge variant="purple">Global SaaS (Todas las Empresas)</Badge>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Configuración multi-idioma/variante para Sectorización y Conciliación con validación estricta.
+                Configuración multi-idioma/variante global para Sectorización y Conciliación. Aplica por defecto a todas las empresas.
               </p>
             </div>
           </div>

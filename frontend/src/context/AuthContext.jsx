@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
 
     setToken(access_token);
     setUser(userData);
-    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'coordinadora';
+    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'emp_default_01';
     setActiveTenantId(tenantToSet);
 
     localStorage.setItem('v4_token', access_token);
@@ -70,7 +70,7 @@ export function AuthProvider({ children }) {
 
     setToken(access_token);
     setUser(userData);
-    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'coordinadora';
+    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'emp_default_01';
     setActiveTenantId(tenantToSet);
 
     localStorage.setItem('v4_token', access_token);
@@ -133,11 +133,11 @@ export function AuthProvider({ children }) {
       const parsedUser = JSON.parse(backupUser);
       setToken(backupToken);
       setUser(parsedUser);
-      setActiveTenantId(parsedUser.tenant_id || 'coordinadora');
+      setActiveTenantId(parsedUser.tenant_id || 'emp_default_01');
 
       localStorage.setItem('v4_token', backupToken);
       localStorage.setItem('v4_user', backupUser);
-      localStorage.setItem('active_tenant_id', parsedUser.tenant_id || 'coordinadora');
+      localStorage.setItem('active_tenant_id', parsedUser.tenant_id || 'emp_default_01');
 
       localStorage.removeItem('super_admin_backup_token');
       localStorage.removeItem('super_admin_backup_user');

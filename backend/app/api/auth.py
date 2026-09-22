@@ -77,9 +77,9 @@ async def login(req: LoginRequest):
                 refetch = await session.execute(sql, {"email": email_clean})
                 user_row = refetch.first()
 
-            elif email_clean in ("demo@empresa.com", "coordinadora@empresa.com", "operario@geofull.app"):
-                t_id = "coordinadora" if "coordinadora" in email_clean else "empresa_demo"
-                emp_name = "Coordinadora Express S.A.S." if t_id == "coordinadora" else "Empresa Demo Logística S.A.S."
+            elif email_clean in ("demo@empresa.com", "admin@dexpress.com.co", "coordinadora@empresa.com", "operario@geofull.app"):
+                t_id = "emp_default_01" if ("dexpress" in email_clean or "coordinadora" in email_clean) else "empresa_demo"
+                emp_name = "DeXpress Colombia SAS" if t_id == "emp_default_01" else "Empresa Demo Logística S.A.S."
 
                 # Asegurar que la empresa exista en public.empresas
                 emp_check = await session.execute(text("SELECT id FROM public.empresas WHERE id = :id LIMIT 1"), {"id": t_id})
@@ -91,7 +91,7 @@ async def login(req: LoginRequest):
                     """), {
                         "id": t_id,
                         "nombre": emp_name,
-                        "nit": "900999888-1" if t_id == "coordinadora" else "900123456-1",
+                        "nit": "900999888-1" if t_id == "emp_default_01" else "900123456-1",
                         "email": email_clean
                     })
                     await session.commit()
@@ -282,8 +282,8 @@ async def google_login(req: GoogleAuthRequest):
             "email": user_row.email,
             "nombre_completo": user_row.nombre_completo or name or user_row.email,
             "rol": user_row.rol or ("super_admin" if is_super_admin else "admin_empresa"),
-            "tenant_id": user_row.tenant_id or ("global" if is_super_admin else "coordinadora"),
-            "empresa_nombre": getattr(user_row, "empresa_nombre", None) or ("SaaS Global Super Admin" if is_super_admin else "Coordinadora Express S.A.S.")
+            "tenant_id": user_row.tenant_id or ("global" if is_super_admin else "emp_default_01"),
+            "empresa_nombre": getattr(user_row, "empresa_nombre", None) or ("SaaS Global Super Admin" if is_super_admin else "DeXpress Colombia SAS")
         }
 
         token = create_access_token(data={"sub": user_dict["id"], "user": user_dict})
