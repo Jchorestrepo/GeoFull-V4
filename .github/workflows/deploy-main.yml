@@ -1,0 +1,78 @@
+name: Continuous Deployment - Rama main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Despliegue en Servidor de Produccion
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Preparar directorio en el servidor
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST_PROD }}
+          username: ${{ secrets.SERVER_USER_PROD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY_PROD }}
+          port: ${{ secrets.SERVER_PORT_PROD || 22 }}
+          script: |
+            sudo mkdir -p /opt/geofull-v4
+            sudo chown -R ${{ secrets.SERVER_USER_PROD }} /opt/geofull-v4
+            rm -rf /opt/geofull-v4/.git
+
+      - name: Copiar archivos al servidor vía SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST_PROD }}
+          username: ${{ secrets.SERVER_USER_PROD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY_PROD }}
+          port: ${{ secrets.SERVER_PORT_PROD || 22 }}
+          source: "docker-compose.yml,backend,frontend,iniciar.sh,README.md,Doc_GeoFull,.agents,.env.example"
+          target: "/opt/geofull-v4"
+          overwrite: true
+
+      - name: Reconstruir y ejecutar contenedores Docker
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST_PROD }}
+          username: ${{ secrets.SERVER_USER_PROD }}
+          key: ${{ secrets.SSH_PRIVATE_KEY_PROD }}
+          port: ${{ secrets.SERVER_PORT_PROD || 22 }}
+          script: |
+            set -e
+            cd /opt/geofull-v4
+            echo "Reiniciando servicios Docker para GeoFull V4..."
+            
+            # Determinar si se requiere sudo para acceder a docker.sock
+            if docker info >/dev/null 2>&1; then
+              DOCKER_PREFIX=""
+            elif sudo docker info >/dev/null 2>&1; then
+              DOCKER_PREFIX="sudo"
+            else
+              echo "Error: Permiso denegado para el socket /var/run/docker.sock"
+              exit 1
+            fi
+
+            if $DOCKER_PREFIX docker compose version >/dev/null 2>&1; then
+              CMD="$DOCKER_PREFIX docker compose"
+            else
+              CMD="$DOCKER_PREFIX docker-compose"
+            fi
+
+            $CMD down || true
+            $CMD up -d --build
+
+            # Importa los GPKG de backend/data/ solo si las tablas catastrales están vacías.
+            # Un fallo aquí no tumba el despliegue: los servicios ya están arriba.
+            echo "Verificando datos catastrales para geocodificación..."
+            $CMD run --rm geo-import || echo "Aviso: la importación de datos catastrales falló, revisa el log."
+
+            echo "Estado de los contenedores GeoFull V4:"
+            $CMD ps
+
