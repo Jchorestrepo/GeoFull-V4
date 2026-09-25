@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { Badge } from '../ui/Badge';
+import { dataCache } from '../../lib/dataCache';
 import {
   QrCode,
   Volume2,
@@ -104,12 +105,29 @@ export function BarcodeScannerStation({ onOrderFound }) {
     setScannedResult(null);
 
     try {
-      // Buscar pedido por número de guía
-      const res = await axios.get(`/api/v1/orders/?guia=${encodeURIComponent(term)}`);
+      let matchedOrder = null;
 
-      const matchedOrder = res.data.find(
-        o => o.guia.toLowerCase() === term.toLowerCase()
-      ) || res.data[0];
+      // 1. Búsqueda instantánea en caché local (0ms)
+      try {
+        const cachedOrders = await dataCache.getOrders();
+        matchedOrder = cachedOrders.find(
+          o => o.guia.toLowerCase() === term.toLowerCase()
+        );
+      } catch (cacheErr) {
+        console.warn("Caché no disponible, realizando consulta directa", cacheErr);
+      }
+
+      // 2. Si no está en caché, consulta ultra-rápida por índice en backend (<10ms)
+      if (!matchedOrder) {
+        const activeTenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
+        const res = await axios.get(`/api/v1/orders/?guia=${encodeURIComponent(term)}`, {
+          headers: { 'X-Tenant-ID': activeTenantId }
+        });
+
+        matchedOrder = res.data.find(
+          o => o.guia.toLowerCase() === term.toLowerCase()
+        ) || res.data[0];
+      }
 
       if (matchedOrder) {
         setScannedResult(matchedOrder);
@@ -119,9 +137,9 @@ export function BarcodeScannerStation({ onOrderFound }) {
         // Locución de Voz
         if (matchedOrder.zona_nombre) {
           const cleanZoneName = matchedOrder.zona_nombre.replace(/^\d+[_-\s]*/, '');
-          speakZone(`Zona ${cleanZoneName}`);
+          speakZone(cleanZoneName);
         } else {
-          speakZone("Atención, paquete fuera de zona");
+          speakZone("Fuera de zona");
         }
       } else {
         setNotFound(true);

@@ -99,14 +99,18 @@ async def list_orders(
     estado: Optional[str] = Query(None),
     zona_id: Optional[uuid.UUID] = Query(None),
     solo_bodega: Optional[bool] = Query(False),
+    guia: Optional[str] = Query(None),
     limit: int = Query(10000, le=50000),
     x_tenant_id: str = Header(..., alias="X-Tenant-ID")
 ):
-    """Lista pedidos del tenant con filtros por estado, zona o sólo paquetes activos en bodega/ruta."""
+    """Lista pedidos del tenant con filtros por estado, zona, guía o sólo paquetes activos en bodega/ruta."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = "SELECT * FROM pedidos WHERE tenant_id = :tenant_id"
         params = {"tenant_id": x_tenant_id, "limit": limit if isinstance(limit, int) else 10000}
 
+        if guia and isinstance(guia, str) and guia.strip():
+            sql += " AND (guia = :guia OR LOWER(guia) = LOWER(:guia))"
+            params["guia"] = guia.strip()
         if estado and isinstance(estado, str):
             sql += " AND estado = :estado"
             params["estado"] = estado

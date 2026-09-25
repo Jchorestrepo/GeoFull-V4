@@ -178,7 +178,7 @@ export function SectorizacionPage() {
       </div>
 
       {/* Barcode Scanner & Voice Announcement Station with Giant Display */}
-      <BarcodeScannerStation onOrderFound={() => fetchOrdersAndZones(true)} />
+      <BarcodeScannerStation />
 
       {/* Main Content Grid: Zones List & Sectorized Orders Table */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
