@@ -26,3 +26,9 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(59, 130, 246, 0.5);
 }
+
+/* Leaflet clean marker override */
+.zone-number-badge-clean {
+  background: transparent !important;
+  border: none !important;
+}

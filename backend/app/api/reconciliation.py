@@ -1239,6 +1239,141 @@ async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Hea
         }
 
 
+@router.get("/dashboard-stats")
+async def get_dashboard_executive_stats(x_tenant_id: str = Header("empresa_demo")):
+    """
+    Endpoint Ejecutivo: Retorna un paquete completo y segmentado de KPIs operativos,
+    calidad catastral, rendimiento de flota y métricas financieras para Gerencia.
+    """
+    async for session in get_db_session(x_tenant_id):
+        # 1. Totales Operativos de Pedidos
+        query_orders = text("""
+            SELECT
+                COUNT(*) as total_pedidos,
+                COUNT(*) FILTER (WHERE estado IN ('CREADO', 'SECTORIZADO')) as creados_pendientes,
+                COUNT(*) FILTER (WHERE estado IN ('EN_INVENTARIO', 'EN_BODEGA')) as en_bodega,
+                COUNT(*) FILTER (WHERE estado IN ('DESPACHADO', 'ASIGNADO')) as en_ruta,
+                COUNT(*) FILTER (WHERE estado = 'ENTREGADO') as entregados,
+                COUNT(*) FILTER (WHERE estado IN ('NOVEDAD', 'DEVOLUCION', 'FALLIDO')) as novedades,
+                COUNT(*) FILTER (WHERE estado = 'FUERA_DE_ZONA' OR zona_id IS NULL) as fuera_de_zona,
+                
+                -- Precisión Catastral
+                COUNT(*) FILTER (WHERE nivel_precision ILIKE '%ROOFTOP%' OR nivel_precision ILIKE '%EXACT%' OR precision_metros = '2') as precision_rooftop,
+                COUNT(*) FILTER (WHERE nivel_precision ILIKE '%PLACA%' OR nivel_precision ILIKE '%INTERSECTION%' OR precision_metros IN ('30', '50', '100')) as precision_aproximada,
+                COUNT(*) FILTER (WHERE nivel_precision ILIKE '%AMBIGUO%' OR nivel_precision ILIKE '%NO_ENCONTRADO%' OR precision_metros = '200' OR latitud IS NULL) as precision_ambigua
+            FROM pedidos
+            WHERE tenant_id = :tenant_id
+        """)
+        res_orders = await session.execute(query_orders, {"tenant_id": x_tenant_id})
+        ord_stats = res_orders.first()
+
+        total_pedidos = ord_stats.total_pedidos or 0
+        entregados = ord_stats.entregados or 0
+        en_ruta = ord_stats.en_ruta or 0
+        novedades = ord_stats.novedades or 0
+        despachados_totales = entregados + en_ruta + novedades
+        
+        sla_pct = round((entregados / despachados_totales * 100), 1) if despachados_totales > 0 else 0.0
+        rooftop_pct = round((ord_stats.precision_rooftop / total_pedidos * 100), 1) if total_pedidos > 0 else 0.0
+
+        # 2. Guías distribuidas por Zonas GeoJSON (Top 6)
+        query_zonas = text("""
+            SELECT 
+                COALESCE(zona_nombre, 'Sin Zona Asignada') as zona,
+                COUNT(*) as cantidad
+            FROM pedidos
+            WHERE tenant_id = :tenant_id
+            GROUP BY zona_nombre
+            ORDER BY cantidad DESC
+            LIMIT 6
+        """)
+        res_zonas = await session.execute(query_zonas, {"tenant_id": x_tenant_id})
+        zonas_list = [{"zona": r.zona, "cantidad": r.cantidad} for r in res_zonas.fetchall()]
+
+        # 3. Top 5 Conductores por Entregas Efectivas
+        query_drivers = text("""
+            SELECT
+                p.domiciliario_id,
+                COALESCE(c.nombre_completo, p.domiciliario_nombre, 'CONDUCTOR NO REGISTRADO') as nombre,
+                COALESCE(c.cedula, 'N/A') as cedula,
+                COALESCE(c.tarifa_paquete, 2000.0) as tarifa,
+                COUNT(*) FILTER (WHERE p.estado = 'ENTREGADO') as entregados,
+                COUNT(*) FILTER (WHERE p.estado = 'ASIGNADO') as en_ruta
+            FROM pedidos p
+            LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+            WHERE p.tenant_id = :tenant_id AND p.domiciliario_id IS NOT NULL
+            GROUP BY p.domiciliario_id, c.nombre_completo, p.domiciliario_nombre, c.cedula, c.tarifa_paquete
+            ORDER BY entregados DESC
+            LIMIT 5
+        """)
+        res_drivers = await session.execute(query_drivers, {"tenant_id": x_tenant_id})
+        drivers_list = []
+        monto_nomina_estimado = 0.0
+        for r in res_drivers.fetchall():
+            entregados_cnt = r.entregados or 0
+            tarifa = float(r.tarifa or 2000.0)
+            monto_driver = entregados_cnt * tarifa
+            monto_nomina_estimado += monto_driver
+            drivers_list.append({
+                "id": str(r.domiciliario_id),
+                "nombre": r.nombre,
+                "cedula": r.cedula,
+                "entregados": entregados_cnt,
+                "en_ruta": r.en_ruta or 0,
+                "tarifa": tarifa,
+                "subtotal_ganado": monto_driver
+            })
+
+        # 4. Total Vales y Adelantos Registrados (Pendientes)
+        query_vales = text("""
+            SELECT COALESCE(SUM(monto), 0) as total_vales
+            FROM novedades_nomina
+            WHERE tenant_id = :tenant_id AND estado = 'PENDIENTE'
+        """)
+        res_vales = await session.execute(query_vales, {"tenant_id": x_tenant_id})
+        total_vales = float(res_vales.scalar() or 0.0)
+
+        # 5. Paquetes en Bodega retenidos (> 24 horas)
+        query_retencion = text("""
+            SELECT COUNT(*) as retencion_24h
+            FROM pedidos
+            WHERE tenant_id = :tenant_id 
+              AND estado IN ('EN_INVENTARIO', 'EN_BODEGA')
+              AND fecha_importacion < NOW() - INTERVAL '24 hours'
+        """)
+        res_retencion = await session.execute(query_retencion, {"tenant_id": x_tenant_id})
+        retencion_24h = res_retencion.scalar() or 0
+
+        return {
+            "resumen_ejecutivo": {
+                "total_pedidos": total_pedidos,
+                "sla_cumplimiento_pct": sla_pct,
+                "precision_rooftop_pct": rooftop_pct,
+                "en_bodega": ord_stats.en_bodega or 0,
+                "retencion_critica_24h": retencion_24h,
+                "monto_nomina_proyectado": monto_nomina_estimado,
+                "total_vales_pendientes": total_vales,
+                "neto_nomina_estimado": max(0.0, monto_nomina_estimado - total_vales)
+            },
+            "estados": {
+                "creados_pendientes": ord_stats.creados_pendientes or 0,
+                "en_bodega": ord_stats.en_bodega or 0,
+                "en_ruta": en_ruta,
+                "entregados": entregados,
+                "novedades": novedades,
+                "fuera_de_zona": ord_stats.fuera_de_zona or 0
+            },
+            "precision_catastral": {
+                "rooftop_exacto": ord_stats.precision_rooftop or 0,
+                "aproximada": ord_stats.precision_aproximada or 0,
+                "ambigua": ord_stats.precision_ambigua or 0
+            },
+            "zonas_distribucion": zonas_list,
+            "top_flota": drivers_list
+        }
+
+
+
 
 
 

@@ -52,6 +52,7 @@ class OrderResponse(BaseModel):
     domiciliario_id: Optional[uuid.UUID] = None
     domiciliario_nombre: Optional[str] = None
     fecha_entrega: Optional[datetime] = None
+    fecha_importacion: Optional[datetime] = None
     pagado_conductor: Optional[bool] = False
     proveedor_entrega: Optional[str] = None
     alerta_rango_logico: bool
@@ -83,6 +84,7 @@ def _build_order_response(r) -> OrderResponse:
         domiciliario_id=r.domiciliario_id,
         domiciliario_nombre=r.domiciliario_nombre,
         fecha_entrega=r.fecha_entrega,
+        fecha_importacion=r.fecha_importacion if hasattr(r, 'fecha_importacion') else None,
         pagado_conductor=r.pagado_conductor if r.pagado_conductor is not None else False,
         proveedor_entrega=r.proveedor_entrega,
         alerta_rango_logico=r.alerta_rango_logico,

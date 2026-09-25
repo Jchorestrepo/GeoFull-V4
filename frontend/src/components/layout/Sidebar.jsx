@@ -9,18 +9,16 @@ import {
   Settings,
   ShieldAlert,
   Compass,
-  LayoutDashboard,
-  Map
+  LayoutDashboard
 } from 'lucide-react';
 
 const NAVIGATION_ITEMS = [
-  { path: '/sectorizacion', label: 'Sectorización', icon: MapPin, badge: 'Etapa 1' },
-  { path: '/mapa-bodega', label: 'Mapa de Bodega', icon: Map, badge: 'V3' },
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/configuracion', label: 'Configuración', icon: Settings },
-  { path: '/personal', label: 'Personal & Vales', icon: Users },
+  { path: '/sectorizacion', label: 'Sectorización', icon: MapPin, badge: 'Zonas' },
   { path: '/conciliacion', label: 'Control & Conciliación', icon: PackageCheck },
+  { path: '/personal', label: 'Personal & Vales', icon: Users },
   { path: '/historial', label: 'Historial / Rastreo', icon: History },
+  { path: '/configuracion', label: 'Configuración', icon: Settings },
 ];
 
 export function Sidebar() {
@@ -98,3 +96,5 @@ export function Sidebar() {
     </aside>
   );
 }
+
+export default Sidebar;
