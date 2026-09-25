@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
     return saved ? JSON.parse(saved) : null;
   });
   const [activeTenantId, setActiveTenantId] = useState(() => {
-    return localStorage.getItem('active_tenant_id') || 'empresa_demo';
+    return localStorage.getItem('active_tenant_id') || 'global';
   });
   const [loading, setLoading] = useState(true);
 
@@ -20,7 +20,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const reqInterceptor = axios.interceptors.request.use((config) => {
       const currentToken = localStorage.getItem('v4_token');
-      const currentTenant = localStorage.getItem('active_tenant_id') || 'empresa_demo';
+      const currentTenant = localStorage.getItem('active_tenant_id') || 'global';
 
       if (!config.headers.Authorization && currentToken) {
         config.headers.Authorization = `Bearer ${currentToken}`;
@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
 
     setToken(access_token);
     setUser(userData);
-    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'emp_default_01';
+    const tenantToSet = userData.tenant_id || 'global';
     setActiveTenantId(tenantToSet);
 
     localStorage.setItem('v4_token', access_token);
@@ -70,7 +70,7 @@ export function AuthProvider({ children }) {
 
     setToken(access_token);
     setUser(userData);
-    const tenantToSet = userData.tenant_id && userData.tenant_id !== 'global' ? userData.tenant_id : 'emp_default_01';
+    const tenantToSet = userData.tenant_id || 'global';
     setActiveTenantId(tenantToSet);
 
     localStorage.setItem('v4_token', access_token);
@@ -133,11 +133,11 @@ export function AuthProvider({ children }) {
       const parsedUser = JSON.parse(backupUser);
       setToken(backupToken);
       setUser(parsedUser);
-      setActiveTenantId(parsedUser.tenant_id || 'emp_default_01');
+      setActiveTenantId(parsedUser.tenant_id || 'global');
 
       localStorage.setItem('v4_token', backupToken);
       localStorage.setItem('v4_user', backupUser);
-      localStorage.setItem('active_tenant_id', parsedUser.tenant_id || 'emp_default_01');
+      localStorage.setItem('active_tenant_id', parsedUser.tenant_id || 'global');
 
       localStorage.removeItem('super_admin_backup_token');
       localStorage.removeItem('super_admin_backup_user');
