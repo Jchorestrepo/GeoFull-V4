@@ -66,8 +66,8 @@ async def create_team_member(
 
         new_id = uuid.uuid4()
         insert_sql = text("""
-            INSERT INTO usuarios (id, tenant_id, email, nombre_completo, rol, activo)
-            VALUES (:id, :tenant_id, :email, :nombre_completo, :rol, :activo)
+            INSERT INTO usuarios (id, tenant_id, email, password_hash, nombre_completo, rol, activo)
+            VALUES (:id, :tenant_id, :email, 'GOOGLE_AUTH', :nombre_completo, :rol, :activo)
             RETURNING id, nombre_completo, email, rol, activo
         """)
         res = await session.execute(insert_sql, {
