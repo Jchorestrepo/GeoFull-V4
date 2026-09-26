@@ -31,9 +31,10 @@ class DriverUnifyRequest(BaseModel):
     driver_ids: List[uuid.UUID]
 
 
-def parse_local_timestamp(raw_val: Optional[str]) -> Optional[datetime]:
+def parse_local_timestamp(raw_val: Optional[Any]) -> Optional[datetime]:
     """
     Parsea fechas/horas entregadas respetando estrictamente la zona horaria local de Colombia (-05:00).
+    Soporta formato ISO/estándar y números de serie de fecha de Excel (ej: 46279.70549768519).
     Retorna un objeto datetime consciente de la zona horaria compatible con asyncpg.
     """
     if not raw_val or not str(raw_val).strip() or str(raw_val).strip().lower() in ['none', 'null', 'nan', '']:
@@ -57,6 +58,16 @@ def parse_local_timestamp(raw_val: Optional[str]) -> Optional[datetime]:
             return dt.replace(tzinfo=BOGOTA_TZ)
         except ValueError:
             continue
+
+    # Soporte para Número de Serie de Fecha de Excel (ej: 46279.70549768519)
+    try:
+        val_num = float(val_str)
+        if 30000 < val_num < 80000:  # Rango de fechas Excel aproximado (1982 a 2119)
+            excel_base = datetime(1899, 12, 30)
+            dt = excel_base + timedelta(days=val_num)
+            return dt.replace(tzinfo=BOGOTA_TZ)
+    except (ValueError, TypeError):
+        pass
 
     return None
 

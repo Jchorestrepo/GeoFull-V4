@@ -5,6 +5,7 @@ import { Upload, FileSpreadsheet, Check, RefreshCw, X, PieChart, ShieldAlert, Al
 import * as XLSX from 'xlsx';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { formatExcelCellValue } from '../../lib/excelDateFormatter';
 
 export function ExcelUploader({ onBatchComplete }) {
   const { activeTenantId } = useAuth();
@@ -27,7 +28,7 @@ export function ExcelUploader({ onBatchComplete }) {
     reader.onload = async (event) => {
       try {
         const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd hh:mm:ss' });
 
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
@@ -47,7 +48,7 @@ export function ExcelUploader({ onBatchComplete }) {
         const parsedRows = jsonRows.slice(1).map(rowArray => {
           const rowObj = {};
           parsedHeaders.forEach((h, idx) => {
-            rowObj[h] = rowArray[idx] !== undefined ? String(rowArray[idx]).trim() : '';
+            rowObj[h] = rowArray[idx] !== undefined ? formatExcelCellValue(rowArray[idx]) : '';
           });
           return rowObj;
         }).filter(rowObj => Object.values(rowObj).some(val => val !== ''));

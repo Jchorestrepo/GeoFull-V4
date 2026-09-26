@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
+import { formatExcelCellValue } from '../../lib/excelDateFormatter';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -75,7 +76,7 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
     reader.onload = (event) => {
       try {
         const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd hh:mm:ss' });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
 
@@ -84,7 +85,7 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
           const rowsPreview = jsonRows.slice(1, 6).map(row => {
             const obj = {};
             headers.forEach((h, idx) => {
-              obj[h] = row[idx] !== undefined ? String(row[idx]).trim() : '';
+              obj[h] = row[idx] !== undefined ? formatExcelCellValue(row[idx]) : '';
             });
             return obj;
           });
