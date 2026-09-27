@@ -830,6 +830,7 @@ class PayrollPayRequest(BaseModel):
     fecha_fin: str
     metodo_pago: Optional[str] = "TRANSFERENCIA"
     referencia_pago: Optional[str] = None
+    vales_custom: Optional[Dict[str, float]] = None
 
 
 @router.get("/payroll/summary")
@@ -837,6 +838,7 @@ async def get_payroll_summary(
     fecha_inicio: str = Query(...),
     fecha_fin: str = Query(...),
     domiciliario_id: Optional[uuid.UUID] = Query(None),
+    include_zero: bool = Query(False),
     x_tenant_id: str = Header("empresa_demo")
 ):
     """
@@ -887,8 +889,6 @@ async def get_payroll_summary(
             d_id = d["id"]
 
             # Paquetes entregados en el rango de fechas (Control y Conciliación)
-            # EXCLUYE guías que ya fueron pagadas previamente (Anti-Doble Pago)
-            # Evalúa fecha_entrega real de la guía en lugar de solo la fecha de importación/actualización del registro
             pkgs_sql = text("""
                 SELECT COUNT(id) as total_entregados
                 FROM pedidos
@@ -902,17 +902,17 @@ async def get_payroll_summary(
             res_pkgs = await session.execute(pkgs_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
             total_entregados = res_pkgs.scalar() or 0
 
-            # Novedades registradas (Vales, Bonos, Penalidades)
+            # Novedades acumuladas pendientes hasta la fecha fin (Vales, Bonos, Penalidades)
             nov_sql = text("""
                 SELECT tipo_novedad, COALESCE(SUM(monto), 0.0) as total
                 FROM novedades_nomina
                 WHERE tenant_id = :tenant_id
                   AND domiciliario_id = :dom_id
-                  AND fecha_novedad >= :f_inicio
+                  AND (estado IS NULL OR estado = 'PENDIENTE')
                   AND fecha_novedad <= :f_fin
                 GROUP BY tipo_novedad
             """)
-            res_nov = await session.execute(nov_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+            res_nov = await session.execute(nov_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_fin": dt_fin})
             nov_map = {r.tipo_novedad: float(r.total) for r in res_nov.fetchall()}
 
             vales = nov_map.get("VALE", 0.0)
@@ -974,6 +974,19 @@ async def get_payroll_summary(
                     bonos = float(liq_row.bonos) if liq_row.bonos is not None else bonos
                     penalidades = float(liq_row.penalidades) if liq_row.penalidades is not None else penalidades
 
+            # Filtrar domiciliarios en cero (sin entregas, sin salario fijo y sin novedades)
+            tiene_actividad = (
+                total_entregados > 0
+                or salario_fijo_aplicado > 0
+                or bonos > 0
+                or penalidades > 0
+                or vales > 0
+                or (liq_row is not None and liq_row.estado_pago == "PAGADO")
+            )
+
+            if not tiene_actividad and not domiciliario_id and not include_zero:
+                continue
+
             payroll_rows.append({
                 "domiciliario_id": str(d_id),
                 "nombre_completo": d["nombre_completo"],
@@ -988,6 +1001,7 @@ async def get_payroll_summary(
                 "salario_fijo_aplicado": round(salario_fijo_aplicado, 2),
                 "bonos": round(bonos, 2),
                 "penalidades": round(penalidades, 2),
+                "vales_pendientes_totales": round(vales, 2),
                 "vales_descontados": round(vales, 2),
                 "monto_bruto": round(monto_bruto, 2),
                 "descuentos": round(descuentos, 2),
@@ -997,6 +1011,9 @@ async def get_payroll_summary(
                 "referencia_pago": referencia_pago,
                 "fecha_pago": fecha_pago
             })
+
+        # Ordenar: PENDIENTES arriba (0), PAGADOS abajo (1), y secundariamente por nombre_completo
+        payroll_rows.sort(key=lambda r: (0 if r["estado_pago"] == "PENDIENTE" else 1, r["nombre_completo"]))
 
         return {
             "fecha_inicio": fecha_inicio,
@@ -1013,7 +1030,7 @@ async def get_payroll_summary(
 async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header("empresa_demo")):
     """
     Marca las nóminas de los domiciliarios seleccionados como PAGADA (individual o masivo).
-    Guarda o actualiza la liquidación en la tabla liquidaciones.
+    Soporta monto personalizado de descuento de vales/anticipos (abono parcial / diferido).
     """
     if not req.domiciliario_ids:
         raise HTTPException(status_code=400, detail="Debe seleccionar al menos un trabajador")
@@ -1029,8 +1046,9 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
     except Exception:
         pass
 
+    vales_custom_map = req.vales_custom or {}
+
     async for session in get_db_session(x_tenant_id):
-        # Obtener los datos actuales del cálculo de nómina para los seleccionados
         summary = await get_payroll_summary(
             fecha_inicio=req.fecha_inicio,
             fecha_fin=req.fecha_fin,
@@ -1043,7 +1061,19 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
 
         for row in summary["items"]:
             if row["domiciliario_id"] in selected_set:
-                dom_id = uuid.UUID(row["domiciliario_id"])
+                dom_id_str = row["domiciliario_id"]
+                dom_id = uuid.UUID(dom_id_str)
+
+                vales_totales = float(row.get("vales_pendientes_totales", row["vales_descontados"]))
+                
+                if dom_id_str in vales_custom_map:
+                    vales_a_descontar = max(0.0, min(float(vales_custom_map[dom_id_str]), vales_totales))
+                else:
+                    vales_a_descontar = vales_totales
+
+                monto_bruto = float(row["monto_bruto"])
+                penalidades = float(row["penalidades"])
+                monto_neto = max(0.0, monto_bruto - (vales_a_descontar + penalidades))
 
                 check_sql = text("""
                     SELECT id FROM liquidaciones
@@ -1072,11 +1102,11 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
                         "metodo": req.metodo_pago or "TRANSFERENCIA",
                         "ref": req.referencia_pago or "",
                         "fecha_pago": now_dt,
-                        "neto": row["monto_neto"],
-                        "bruto": row["monto_bruto"],
-                        "vales": row["vales_descontados"],
+                        "neto": round(monto_neto, 2),
+                        "bruto": round(monto_bruto, 2),
+                        "vales": round(vales_a_descontar, 2),
                         "bonos": row["bonos"],
-                        "penalidades": row["penalidades"],
+                        "penalidades": penalidades,
                         "id": existing.id
                     })
                 else:
@@ -1103,16 +1133,16 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
                         "monto_pkgs": row["monto_paquetes"],
                         "sal_fijo": row["salario_fijo_aplicado"],
                         "bonos": row["bonos"],
-                        "penalidades": row["penalidades"],
-                        "vales": row["vales_descontados"],
-                        "bruto": row["monto_bruto"],
-                        "neto": row["monto_neto"],
+                        "penalidades": penalidades,
+                        "vales": round(vales_a_descontar, 2),
+                        "bruto": round(monto_bruto, 2),
+                        "neto": round(monto_neto, 2),
                         "metodo": req.metodo_pago or "TRANSFERENCIA",
                         "ref": req.referencia_pago or "",
                         "fecha_pago": now_dt
                     })
 
-                # Marcar los pedidos del período como pagados al conductor (con timestamp y liquidacion_id)
+                # Marcar los pedidos del período como pagados al conductor
                 upd_pkgs = text("""
                     UPDATE pedidos 
                     SET pagado_conductor = TRUE,
@@ -1125,19 +1155,81 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
                 """)
                 await session.execute(upd_pkgs, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
 
-                # Cambiar estado de novedades del período a APLICADO
-                upd_nov = text("""
+                # Aplicar vales_a_descontar a los registros de novedades_nomina (tipo 'VALE')
+                if vales_totales > 0 and vales_a_descontar > 0:
+                    nov_pending_sql = text("""
+                        SELECT id, monto, motivo, fecha_novedad
+                        FROM novedades_nomina
+                        WHERE tenant_id = :tenant_id
+                          AND domiciliario_id = :dom_id
+                          AND tipo_novedad = 'VALE'
+                          AND (estado IS NULL OR estado = 'PENDIENTE')
+                          AND fecha_novedad <= :f_fin
+                        ORDER BY fecha_novedad ASC, fecha_creacion ASC
+                    """)
+                    res_pending = await session.execute(nov_pending_sql, {
+                        "tenant_id": x_tenant_id,
+                        "dom_id": dom_id,
+                        "f_fin": dt_fin
+                    })
+                    pending_vales = [dict(r._mapping) for r in res_pending.fetchall()]
+
+                    rem_to_discount = vales_a_descontar
+
+                    for nv in pending_vales:
+                        nv_id = nv["id"]
+                        nv_monto = float(nv["monto"])
+
+                        if rem_to_discount >= nv_monto:
+                            upd_nv = text("""
+                                UPDATE novedades_nomina
+                                SET estado = 'APLICADO'
+                                WHERE id = :id
+                            """)
+                            await session.execute(upd_nv, {"id": nv_id})
+                            rem_to_discount -= nv_monto
+                        elif rem_to_discount > 0:
+                            nuevo_monto_pendiente = nv_monto - rem_to_discount
+                            upd_nv = text("""
+                                UPDATE novedades_nomina
+                                SET monto = :nuevo_monto
+                                WHERE id = :id
+                            """)
+                            await session.execute(upd_nv, {"id": nv_id, "nuevo_monto": nuevo_monto_pendiente})
+
+                            ins_applied = text("""
+                                INSERT INTO novedades_nomina (
+                                    tenant_id, domiciliario_id, tipo_novedad, monto, motivo, fecha_novedad, estado
+                                ) VALUES (
+                                    :tenant_id, :dom_id, 'VALE', :monto, :motivo, :f_nov, 'APLICADO'
+                                )
+                            """)
+                            await session.execute(ins_applied, {
+                                "tenant_id": x_tenant_id,
+                                "dom_id": dom_id,
+                                "monto": rem_to_discount,
+                                "motivo": f"Abono parcial de vale (${rem_to_discount:,.0f} descontados de ${nv_monto:,.0f})",
+                                "f_nov": nv["fecha_novedad"]
+                            })
+
+                            rem_to_discount = 0.0
+                        else:
+                            break
+
+                # Aplicar otras novedades (BONO y PENALIDAD) como APLICADO
+                upd_other_nov = text("""
                     UPDATE novedades_nomina SET estado = 'APLICADO'
                     WHERE tenant_id = :tenant_id
                       AND domiciliario_id = :dom_id
-                      AND fecha_novedad >= :f_inicio
+                      AND tipo_novedad IN ('BONO', 'PENALIDAD')
                       AND fecha_novedad <= :f_fin
+                      AND (estado IS NULL OR estado = 'PENDIENTE')
                 """)
-                await session.execute(upd_nov, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
+                await session.execute(upd_other_nov, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_fin": dt_fin})
 
                 updated_count += 1
 
-        # Actualizar estado de período si existe un período activo para este rango
+        # Actualizar estado de período si existe un período activo para este rango o registrarlo como PAGADO
         upd_per = text("""
             UPDATE periodos_nomina
             SET estado = 'PAGADO', fecha_pago = :fecha_pago
@@ -1145,7 +1237,15 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header
               AND fecha_inicio = :f_inicio
               AND fecha_fin = :f_fin
         """)
-        await session.execute(upd_per, {"tenant_id": x_tenant_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+        res_upd = await session.execute(upd_per, {"tenant_id": x_tenant_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+
+        if res_upd.rowcount == 0:
+            nombre_corte = f"Corte Liquidado ({dt_inicio.strftime('%Y-%m-%d')} a {dt_fin.strftime('%Y-%m-%d')})"
+            ins_per = text("""
+                INSERT INTO periodos_nomina (tenant_id, nombre_periodo, fecha_inicio, fecha_fin, estado, fecha_pago)
+                VALUES (:tenant_id, :nombre, :f_inicio, :f_fin, 'PAGADO', :fecha_pago)
+            """)
+            await session.execute(ins_per, {"tenant_id": x_tenant_id, "nombre": nombre_corte, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
 
         await session.commit()
         return {
@@ -1167,8 +1267,11 @@ class PeriodoNominaCreate(BaseModel):
 @router.get("/payroll/periods")
 async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
     """
-    Devuelve la lista de períodos de nómina guardados y el período activo.
+    Devuelve la lista de períodos de nómina guardados y el período activo/sugerido.
+    Si no hay un período 'ABIERTO', sugiere automáticamente el rango que inicia al día siguiente del último pago hasta la fecha actual.
     """
+    today_dt = datetime.now(BOGOTA_TZ).date()
+
     async for session in get_db_session(x_tenant_id):
         res = await session.execute(text("""
             SELECT id, nombre_periodo, fecha_inicio, fecha_fin, estado, total_neto, fecha_creacion
@@ -1194,8 +1297,40 @@ async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
             if p["estado"] == "ABIERTO" and not active_period:
                 active_period = p_dict
 
-        if not active_period and formatted:
-            active_period = formatted[0]
+        # Si no hay período ABIERTO, calcular la fecha siguiente al último pago/corte
+        if not active_period:
+            last_date_sql = text("""
+                SELECT MAX(max_f) as ultima_fecha FROM (
+                    SELECT MAX(fecha_fin) as max_f FROM periodos_nomina WHERE tenant_id = :tenant_id AND estado IN ('PAGADO', 'CERRADO')
+                    UNION ALL
+                    SELECT MAX(fecha_fin) as max_f FROM liquidaciones WHERE tenant_id = :tenant_id AND estado_pago = 'PAGADO'
+                ) sub
+            """)
+            res_last = await session.execute(last_date_sql, {"tenant_id": x_tenant_id})
+            last_date_row = res_last.scalar()
+
+            if last_date_row:
+                if isinstance(last_date_row, str):
+                    last_date = datetime.strptime(last_date_row, "%Y-%m-%d").date()
+                else:
+                    last_date = last_date_row
+                siguiente_inicio = last_date + timedelta(days=1)
+            else:
+                siguiente_inicio = today_dt.replace(day=1)
+
+            siguiente_fin = max(today_dt, siguiente_inicio)
+
+            active_period = {
+                "id": "sugerido",
+                "nombre_periodo": f"⚡ ACTUAL ({siguiente_inicio.strftime('%Y-%m-%d')} a {siguiente_fin.strftime('%Y-%m-%d')})",
+                "fecha_inicio": siguiente_inicio.strftime("%Y-%m-%d"),
+                "fecha_fin": siguiente_fin.strftime("%Y-%m-%d"),
+                "estado": "ACTUAL",
+                "total_neto": 0.0,
+                "fecha_creacion": None
+            }
+            # Anteponer el período ACTUAL como la primera opción en la lista
+            formatted.insert(0, active_period)
 
         return {
             "periodos": formatted,

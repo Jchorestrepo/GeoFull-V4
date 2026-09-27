@@ -61,11 +61,17 @@ export function NominaLiquidacionView() {
 
   const [toast, setToast] = useState(null);
 
+  const [includeZero, setIncludeZero] = useState(false);
+
   const fetchSummary = useCallback(async () => {
     setLoading(true);
     try {
       const res = await axios.get('/api/v1/reconciliation/payroll/summary', {
-        params: { fecha_inicio: fechaInicio, fecha_fin: fechaFin }
+        params: {
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          include_zero: includeZero
+        }
       });
       setSummaryData(res.data);
       setSelectedIds([]);
@@ -74,7 +80,7 @@ export function NominaLiquidacionView() {
     } finally {
       setLoading(false);
     }
-  }, [fechaInicio, fechaFin]);
+  }, [fechaInicio, fechaFin, includeZero]);
 
   const fetchDriversList = async () => {
     try {
@@ -87,6 +93,27 @@ export function NominaLiquidacionView() {
       console.error("Error al obtener domiciliarios", err);
     }
   };
+
+  const [savedPeriods, setSavedPeriods] = useState([]);
+  const [activePeriod, setActivePeriod] = useState(null);
+
+  const fetchActivePeriod = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/v1/reconciliation/payroll/periods');
+      setSavedPeriods(res.data?.periodos || []);
+      if (res.data?.periodo_activo) {
+        setActivePeriod(res.data.periodo_activo);
+        setFechaInicio(res.data.periodo_activo.fecha_inicio);
+        setFechaFin(res.data.periodo_activo.fecha_fin);
+      }
+    } catch (err) {
+      console.error("Error al obtener período activo/sugerido", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchActivePeriod();
+  }, [fetchActivePeriod]);
 
   useEffect(() => {
     fetchSummary();
@@ -211,6 +238,8 @@ export function NominaLiquidacionView() {
     }
   };
 
+  const [valesCustomMap, setValesCustomMap] = useState({});
+
   // Marcar Pagado (Individual o Masivo)
   const handleExecutePayment = async () => {
     const targetIds = payTargetDriver ? [payTargetDriver] : selectedIds;
@@ -226,7 +255,8 @@ export function NominaLiquidacionView() {
         fecha_inicio: fechaInicio,
         fecha_fin: fechaFin,
         metodo_pago: metodoPago,
-        referencia_pago: referenciaPago
+        referencia_pago: referenciaPago,
+        vales_custom: valesCustomMap
       });
 
       setToast({
@@ -239,6 +269,7 @@ export function NominaLiquidacionView() {
       setPayTargetDriver(null);
       setMetodoPago('TRANSFERENCIA');
       setReferenciaPago('');
+      setValesCustomMap({});
       fetchSummary();
     } catch (err) {
       console.error("Error al marcar pago", err);
@@ -283,31 +314,74 @@ export function NominaLiquidacionView() {
           </p>
         </div>
 
-        {/* Date Selector bar */}
-        <div className="flex flex-wrap items-center gap-2 bg-slate-900/80 p-2 rounded-2xl border border-white/10 backdrop-blur-xl">
-          <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold px-2">
-            <Calendar className="w-4 h-4 text-blue-400" />
-            <span>Período:</span>
+        {/* Control Box: 2 Structured Rows */}
+        <div className="flex flex-col gap-2.5 bg-slate-900/90 p-3 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl w-full lg:w-auto">
+          {/* Línea 1 (Arriba): Cortes Guardados */}
+          {savedPeriods.length > 0 && (
+            <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-purple-500/40 border-b border-white/10 pb-2">
+              <span className="text-xs text-purple-300 font-bold whitespace-nowrap">Cortes:</span>
+              <select
+                value={activePeriod ? activePeriod.id : ''}
+                onChange={(e) => {
+                  const pId = e.target.value;
+                  const selected = savedPeriods.find(p => p.id === pId);
+                  if (selected) {
+                    setActivePeriod(selected);
+                    setFechaInicio(selected.fecha_inicio);
+                    setFechaFin(selected.fecha_fin);
+                  }
+                }}
+                className="bg-transparent text-white font-bold text-xs w-full outline-none focus:text-purple-300 cursor-pointer truncate"
+              >
+                {savedPeriods.map(p => (
+                  <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                    {p.nombre_periodo.startsWith('⚡ ACTUAL') ? p.nombre_periodo : `${p.nombre_periodo} (${p.fecha_inicio} a ${p.fecha_fin}) [${p.estado}]`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Línea 2 (Abajo): Rango de Fechas (Inicio + Fin juntas) + Filtros */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold px-1">
+              <Calendar className="w-4 h-4 text-blue-400" />
+              <span>Rango:</span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={fechaInicio}
+                onChange={(e) => setFechaInicio(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500 cursor-pointer"
+              />
+              <span className="text-slate-500 text-xs font-bold">a</span>
+              <input
+                type="date"
+                value={fechaFin}
+                onChange={(e) => setFechaFin(e.target.value)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500 cursor-pointer"
+              />
+            </div>
+
+            <label className="flex items-center gap-1.5 text-xs text-slate-300 font-medium px-2 cursor-pointer select-none border-l border-white/10 ml-auto sm:ml-0">
+              <input
+                type="checkbox"
+                checked={includeZero}
+                onChange={(e) => setIncludeZero(e.target.checked)}
+                className="rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-0 cursor-pointer"
+              />
+              <span>Incluir en $0</span>
+            </label>
+
+            <button
+              onClick={fetchSummary}
+              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md"
+            >
+              Filtrar
+            </button>
           </div>
-          <input
-            type="date"
-            value={fechaInicio}
-            onChange={(e) => setFechaInicio(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500"
-          />
-          <span className="text-slate-500 text-xs font-bold">a</span>
-          <input
-            type="date"
-            value={fechaFin}
-            onChange={(e) => setFechaFin(e.target.value)}
-            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500"
-          />
-          <button
-            onClick={fetchSummary}
-            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md"
-          >
-            Filtrar
-          </button>
         </div>
       </div>
 
@@ -433,10 +507,14 @@ export function NominaLiquidacionView() {
                   const isSelected = selectedIds.includes(row.domiciliario_id);
                   const audit = file2Map[row.domiciliario_id];
 
+                  const isPaid = row.estado_pago === 'PAGADO';
+
                   return (
                     <tr
                       key={row.domiciliario_id}
-                      className={`hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-blue-950/30' : ''}`}
+                      className={`hover:bg-slate-800/40 transition-colors ${
+                        isSelected ? 'bg-blue-950/30' : isPaid ? 'bg-slate-950/40 opacity-75' : ''
+                      }`}
                     >
                       <td className="p-3 text-center">
                         <input
@@ -701,6 +779,86 @@ export function NominaLiquidacionView() {
             </p>
 
             <div className="space-y-3 text-xs">
+              {(() => {
+                const targetDrivers = items.filter(i => payTargetDriver ? i.domiciliario_id === payTargetDriver : selectedIds.includes(i.domiciliario_id));
+                const hasVales = targetDrivers.some(d => (d.vales_pendientes_totales || d.vales_descontados) > 0);
+
+                if (!hasVales) return null;
+
+                return (
+                  <div className="p-3 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-amber-300 border-b border-white/5 pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <DollarSign className="w-4 h-4 text-amber-400" />
+                        Abono / Descuento Parcial de Vales
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">Diferir saldo a próximo corte</span>
+                    </div>
+
+                    {targetDrivers.map(d => {
+                      const valesTotales = d.vales_pendientes_totales ?? d.vales_descontados ?? 0;
+                      if (valesTotales <= 0) return null;
+
+                      const valesAdescontar = valesCustomMap[d.domiciliario_id] !== undefined
+                        ? Number(valesCustomMap[d.domiciliario_id])
+                        : valesTotales;
+
+                      const remanente = Math.max(0, valesTotales - valesAdescontar);
+                      const bruto = Number(d.monto_bruto || 0);
+                      const penalidades = Number(d.penalidades || 0);
+                      const netoCalculado = Math.max(0, bruto - (valesAdescontar + penalidades));
+
+                      return (
+                        <div key={d.domiciliario_id} className="bg-slate-900/80 p-2.5 rounded-xl border border-white/5 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-white">{d.nombre_completo}</span>
+                            <span className="text-[11px] font-mono text-slate-400">Total Vales: ${valesTotales.toLocaleString('es-CO')}</span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 items-center">
+                            <div>
+                              <label className="block text-[10px] text-slate-400 font-medium mb-1">Descontar hoy ($):</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max={valesTotales}
+                                value={valesCustomMap[d.domiciliario_id] !== undefined ? valesCustomMap[d.domiciliario_id] : valesTotales}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? '' : Math.max(0, Math.min(valesTotales, Number(e.target.value)));
+                                  setValesCustomMap(prev => ({ ...prev, [d.domiciliario_id]: val }));
+                                }}
+                                className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-amber-500/50 text-amber-300 font-mono font-bold text-xs outline-none focus:border-amber-400"
+                              />
+                            </div>
+
+                            <div className="text-right space-y-0.5">
+                              <div className="text-[10px] text-slate-400">Neto hoy:</div>
+                              <div className="text-sm font-black text-emerald-400 font-mono">
+                                ${netoCalculado.toLocaleString('es-CO')}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px]">
+                            {remanente > 0 ? (
+                              <span className="text-amber-400 font-medium flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Diferido a próximo corte: <strong>${remanente.toLocaleString('es-CO')}</strong>
+                              </span>
+                            ) : (
+                              <span className="text-emerald-400 font-medium flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Se descontará el 100% del vale
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">Método de Pago:</label>
                 <select

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   MapPin,
   PackageCheck,
-  Users,
+  Banknote,
   History,
   Settings,
   ShieldAlert,
@@ -16,7 +16,7 @@ const NAVIGATION_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/sectorizacion', label: 'Sectorización', icon: MapPin, badge: 'Zonas' },
   { path: '/conciliacion', label: 'Control & Conciliación', icon: PackageCheck },
-  { path: '/personal', label: 'Personal & Vales', icon: Users },
+  { path: '/personal', label: 'Nóminas', icon: Banknote },
   { path: '/historial', label: 'Historial / Rastreo', icon: History },
   { path: '/configuracion', label: 'Configuración', icon: Settings },
 ];

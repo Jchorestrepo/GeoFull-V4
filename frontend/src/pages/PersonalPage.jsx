@@ -192,7 +192,7 @@ export function PersonalPage() {
           }`}
         >
           <Users className="w-4 h-4" />
-          <span>Directorio de Personal & Domiciliarios</span>
+          <span>Personal</span>
         </button>
 
         <button
@@ -204,7 +204,7 @@ export function PersonalPage() {
           }`}
         >
           <DollarSign className="w-4 h-4 text-emerald-400" />
-          <span>Nómina & Vales (Por Entregas)</span>
+          <span>Liquidar Nómina</span>
         </button>
       </div>
 
