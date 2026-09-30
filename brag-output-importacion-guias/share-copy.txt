@@ -1,0 +1,1 @@
+Import thousands of shipping guides in seconds with GeoFull V4's automated PostGIS 7-level geocoding & spatial sectorization.

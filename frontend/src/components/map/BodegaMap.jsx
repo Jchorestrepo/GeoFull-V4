@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { dataCache } from '../../lib/dataCache';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -127,19 +128,19 @@ export function BodegaMap({ height = '600px', onZoneAssigned }) {
 
   const { activeTenantId } = useAuth();
 
-  // Fetch Polygons and Orders
-  const loadMapData = async () => {
+  // Fetch Polygons and Orders via dataCache for 0ms instant load
+  const loadMapData = async (force = false) => {
     setLoading(true);
     try {
-      const [resGeoJSON, resOrders, resZones] = await Promise.all([
-        axios.get('/api/v1/zones/geojson'),
-        axios.get('/api/v1/orders/', { params: { solo_bodega: true } }),
-        axios.get('/api/v1/zones/')
+      const [gData, oData, zData] = await Promise.all([
+        dataCache.getZonesGeoJSON(force),
+        dataCache.getOrders(force),
+        dataCache.getZones(force)
       ]);
 
-      setGeojsonData(resGeoJSON.data);
-      setOrdersData(resOrders.data);
-      setZonesList(resZones.data);
+      setGeojsonData(gData);
+      setOrdersData(oData);
+      setZonesList(zData);
     } catch (err) {
       console.error("Error cargando datos del mapa", err);
     } finally {

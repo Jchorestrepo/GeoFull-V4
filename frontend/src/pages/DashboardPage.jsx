@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { dataCache } from '../lib/dataCache';
 import axios from 'axios';
 
 export function DashboardPage() {
@@ -34,16 +35,23 @@ export function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [toast, setToast] = useState(null);
   const [showMap, setShowMap] = useState(true);
+  const [isStale, setIsStale] = useState(dataCache.isStale('dashboard'));
   const { activeTenantId } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsub = dataCache.subscribe(() => {
+      setIsStale(dataCache.isStale('dashboard'));
+    });
+    return () => unsub();
+  }, []);
 
   const fetchDashboardStats = useCallback(async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await axios.get('/api/v1/reconciliation/dashboard-stats', {
-        headers: { 'X-Tenant-ID': activeTenantId || 'empresa_demo' }
-      });
-      setStats(res.data);
+      const data = await dataCache.getDashboardStats(isManual);
+      setStats(data);
+      setIsStale(dataCache.isStale('dashboard'));
       if (isManual) {
         setToast({ message: 'Dashboard actualizado en tiempo real', type: 'success' });
       }
@@ -54,7 +62,7 @@ export function DashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTenantId]);
+  }, []);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -124,10 +132,14 @@ export function DashboardPage() {
           <button
             onClick={() => fetchDashboardStats(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 text-xs font-semibold transition-all backdrop-blur-md active:scale-95 disabled:opacity-50"
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all backdrop-blur-md active:scale-95 disabled:opacity-50 ${
+              isStale
+                ? 'bg-amber-500/30 text-amber-300 border-2 border-amber-400 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)] ring-2 ring-amber-400/50'
+                : 'bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400'
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Actualizando...' : 'Refrescar Métricas'}
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : isStale ? 'animate-spin text-amber-300' : ''}`} />
+            {refreshing ? 'Actualizando...' : isStale ? '⚠️ Cambios detectados — Refrescar' : 'Refrescar Métricas'}
           </button>
         </div>
       </div>

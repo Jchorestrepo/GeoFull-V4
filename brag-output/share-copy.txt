@@ -1,0 +1,1 @@
+GeoFull V4 is live: 7-level precision PostGIS geocoding & multi-zone spatial sectorization built with Apple dark minimalism.

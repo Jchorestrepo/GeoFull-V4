@@ -31,6 +31,14 @@ export function SectorizacionPage() {
   const [uploadTab, setUploadTab] = useState('ORDERS');
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isStale, setIsStale] = useState(dataCache.isStale('orders'));
+
+  useEffect(() => {
+    const unsub = dataCache.subscribe(() => {
+      setIsStale(dataCache.isStale('orders'));
+    });
+    return () => unsub();
+  }, []);
 
   // Cargar lista de zonas y pedidos usando dataCache para navegación INSTANTÁNEA (0ms)
   const fetchOrdersAndZones = useCallback(async (forceRefresh = false) => {
@@ -45,6 +53,7 @@ export function SectorizacionPage() {
       ]);
       setOrders(ordersRes);
       setZones(zonesRes);
+      setIsStale(dataCache.isStale('orders'));
     } catch (err) {
       console.error("Error al cargar pedidos/zonas", err);
     } finally {
@@ -55,7 +64,7 @@ export function SectorizacionPage() {
   const { activeTenantId } = useAuth();
 
   useEffect(() => {
-    fetchOrdersAndZones(true);
+    fetchOrdersAndZones(false);
   }, [activeTenantId, fetchOrdersAndZones]);
 
   // Manejar asignación manual de zona desde el selector desplegable
@@ -73,8 +82,9 @@ export function SectorizacionPage() {
         message: `La guía ${res.data.guia} fue reasignada a la zona '${res.data.zona_nombre}'`
       });
 
-      // Update cache instantly
+      // Update cache & notify mutation
       dataCache.updateSingleOrderInCache(res.data);
+      dataCache.notifyMutation();
       fetchOrdersAndZones();
     } catch (err) {
       console.error("Error asignando zona", err);
@@ -87,6 +97,7 @@ export function SectorizacionPage() {
   };
 
   const handleUploadComplete = (summary) => {
+    dataCache.notifyMutation();
     fetchOrdersAndZones(true);
     if (summary) {
       setToast({
@@ -121,10 +132,14 @@ export function SectorizacionPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => fetchOrdersAndZones(true)}
-            className="p-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-300 transition-all border border-slate-700"
-            title="Refrescar Datos"
+            className={`p-2.5 rounded-2xl transition-all border ${
+              isStale
+                ? 'bg-amber-500/30 text-amber-300 border-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)] ring-2 ring-amber-400/50'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
+            }`}
+            title={isStale ? "Cambios detectados — Clic para refrescar" : "Refrescar Datos"}
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : isStale ? 'animate-spin text-amber-300' : ''}`} />
           </button>
 
           <button

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>GeoFull V4 — Promotional Launch Video</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background-color: #0b0f17;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f8fafc;
+        -webkit-font-smoothing: antialiased;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        background: radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.15) 0%, rgba(11, 15, 23, 1) 70%);
+      }
+
+      /* Apple Glassmorphism Card Style */
+      .glass-card {
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+
+      .glow-blue {
+        box-shadow: 0 0 40px rgba(59, 130, 246, 0.3);
+      }
+
+      .glow-emerald {
+        box-shadow: 0 0 40px rgba(16, 185, 129, 0.3);
+      }
+
+      /* Scene Wrappers */
+      .scene {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Scene 1 Elements */
+      .scene1-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 24px;
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        border-radius: 9999px;
+        color: #60a5fa;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 32px;
+      }
+
+      .scene1-title {
+        font-size: 80px;
+        font-weight: 800;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+        text-align: center;
+        background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 24px;
+      }
+
+      .scene1-sub {
+        font-size: 32px;
+        font-weight: 500;
+        color: #38bdf8;
+        letter-spacing: -0.01em;
+        text-align: center;
+      }
+
+      /* Scene 2 Elements */
+      .scene-header {
+        font-size: 48px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #f8fafc;
+        margin-bottom: 60px;
+        text-align: center;
+      }
+
+      .pipeline-container {
+        display: flex;
+        gap: 32px;
+        width: 100%;
+        max-width: 1600px;
+        justify-content: center;
+      }
+
+      .pipeline-card {
+        flex: 1;
+        padding: 40px 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .card-step {
+        font-size: 16px;
+        font-weight: 700;
+        color: #3b82f6;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 12px;
+      }
+
+      .card-title {
+        font-size: 28px;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 16px;
+      }
+
+      .card-desc {
+        font-size: 18px;
+        color: #94a3b8;
+        line-height: 1.5;
+      }
+
+      .card-tag {
+        margin-top: 24px;
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.05);
+        color: #cbd5e1;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      /* Scene 3 Elements */
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 40px;
+        width: 100%;
+        max-width: 1600px;
+        margin-bottom: 40px;
+      }
+
+      .metric-card {
+        padding: 48px 36px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+
+      .metric-value {
+        font-size: 72px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        margin-bottom: 8px;
+      }
+
+      .metric-value.emerald { color: #10b981; }
+      .metric-value.blue { color: #3b82f6; }
+      .metric-value.amber { color: #f59e0b; }
+
+      .metric-label {
+        font-size: 20px;
+        font-weight: 600;
+        color: #cbd5e1;
+      }
+
+      .status-bar {
+        width: 100%;
+        max-width: 1600px;
+        padding: 24px 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+      }
+      .dot.emerald { background-color: #10b981; box-shadow: 0 0 12px #10b981; }
+      .dot.blue { background-color: #3b82f6; box-shadow: 0 0 12px #3b82f6; }
+
+      /* Scene 4 Elements */
+      .logo-icon {
+        width: 120px;
+        height: 120px;
+        background: linear-gradient(135deg, #3b82f6 0%, #10b981 100%);
+        border-radius: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 56px;
+        font-weight: 900;
+        color: #ffffff;
+        box-shadow: 0 0 60px rgba(59, 130, 246, 0.4);
+        margin-bottom: 32px;
+      }
+
+      .outro-title {
+        font-size: 72px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: #ffffff;
+        margin-bottom: 16px;
+      }
+
+      .outro-tag {
+        font-size: 28px;
+        color: #94a3b8;
+        margin-bottom: 40px;
+      }
+
+      .cta-btn {
+        padding: 18px 48px;
+        background: #3b82f6;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 700;
+        border-radius: 9999px;
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.4);
+        letter-spacing: 0.02em;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="18"
+      data-width="1920"
+      data-height="1080"
+    >
+      <audio id="music" data-start="0" data-duration="18" data-track-index="9" data-volume="0.3" src="assets/music/tech-bed.mp3"></audio>
+
+      <!-- Scene 1: Hook -->
+      <div id="scene1" class="scene clip" data-start="0" data-duration="3.5" data-track-index="0">
+        <div id="s1-badge" class="scene1-badge">⚡ GeoFull V4 Engine</div>
+        <h1 id="s1-title" class="scene1-title">518,000+ PREDIOS CATASTRALES</h1>
+        <p id="s1-sub" class="scene1-sub">PostGIS Geocodificación 7 Niveles & Sectorización Operativa</p>
+      </div>
+
+      <!-- Scene 2: Pipeline -->
+      <div id="scene2" class="scene clip" data-start="3.5" data-duration="5" data-track-index="1">
+        <h2 id="s2-header" class="scene-header">PIPELINE DE PROCESAMIENTO AUTOMÁTICO</h2>
+        <div class="pipeline-container">
+          <div id="p-card1" class="glass-card pipeline-card glow-blue">
+            <span class="card-step">Etapa 1</span>
+            <h3 class="card-title">Sanitizer V3</h3>
+            <p class="card-desc">Normalización sintáctica estandarizada de direcciones (CL, CR, TV, DG).</p>
+            <div class="card-tag">Python Regex & Normalizer</div>
+          </div>
+          <div id="p-card2" class="glass-card pipeline-card glow-blue">
+            <span class="card-step">Etapa 2</span>
+            <h3 class="card-title">PostGIS Geocoder</h3>
+            <p class="card-desc">Búsqueda directa espacial en 7 niveles de precisión catastral.</p>
+            <div class="card-tag">518k+ Nomenclaturas</div>
+          </div>
+          <div id="p-card3" class="glass-card pipeline-card glow-emerald">
+            <span class="card-step">Etapa 3</span>
+            <h3 class="card-title">Sectorizador Multizona</h3>
+            <p class="card-desc">Asignación `ST_Contains` de pedidos a polígonos zonales en tiempo real.</p>
+            <div class="card-tag">PostGIS ST_Contains</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 3: Metrics & Settlement -->
+      <div id="scene3" class="scene clip" data-start="8.5" data-duration="5" data-track-index="2">
+        <h2 id="s3-header" class="scene-header">PRECISIÓN ESPACIAL & CONCILIACIÓN OPERATIVA</h2>
+        <div class="metrics-grid">
+          <div id="m-card1" class="glass-card metric-card glow-emerald">
+            <div id="m-val1" class="metric-value emerald">98.4%</div>
+            <div class="metric-label">Exactitud de Geocodificación</div>
+          </div>
+          <div id="m-card2" class="glass-card metric-card glow-blue">
+            <div id="m-val2" class="metric-value blue">14,250</div>
+            <div class="metric-label">Pedidos Procesados / Día</div>
+          </div>
+          <div id="m-card3" class="glass-card metric-card glow-emerald">
+            <div id="m-val3" class="metric-value emerald">100%</div>
+            <div class="metric-label">Conciliación de Nómina</div>
+          </div>
+        </div>
+        <div id="s3-status" class="glass-card status-bar">
+          <div class="status-item"><span class="dot emerald"></span> Multi-Tenant Isolation (RLS) Activo</div>
+          <div class="status-item"><span class="dot blue"></span> Backend FastAPI + AsyncPG Operativo</div>
+        </div>
+      </div>
+
+      <!-- Scene 4: Outro -->
+      <div id="scene4" class="scene clip" data-start="13.5" data-duration="4.5" data-track-index="3">
+        <div id="s4-logo" class="logo-icon">G4</div>
+        <h1 id="s4-title" class="outro-title">GeoFull V4</h1>
+        <p id="s4-tag" class="outro-tag">Plataforma Inteligente de Geocodificación & Sectorización Operativa</p>
+        <div id="s4-cta" class="cta-btn">Entorno Listo • ./iniciar.sh</div>
+      </div>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Scene 1: Hook (0.0s - 3.5s)
+      tl.to("#scene1", { opacity: 1, duration: 0.4 }, 0.0);
+      tl.fromTo("#s1-badge", { opacity: 0, y: -20, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power3.out" }, 0.2);
+      tl.fromTo("#s1-title", { opacity: 0, y: 30, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, duration: 0.8, ease: "power3.out" }, 0.4);
+      tl.fromTo("#s1-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 0.8);
+      tl.to("#scene1", { opacity: 0, scale: 0.98, duration: 0.5, ease: "power2.in" }, 3.0);
+
+      // Scene 2: Pipeline (3.5s - 8.5s)
+      tl.to("#scene2", { opacity: 1, duration: 0.4 }, 3.5);
+      tl.fromTo("#s2-header", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 3.7);
+      tl.fromTo("#p-card1", { opacity: 0, y: 40, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.4)" }, 4.0);
+      tl.fromTo("#p-card2", { opacity: 0, y: 40, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.4)" }, 4.4);
+      tl.fromTo("#p-card3", { opacity: 0, y: 40, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.4)" }, 4.8);
+      tl.to("#scene2", { opacity: 0, scale: 0.98, duration: 0.5, ease: "power2.in" }, 8.0);
+
+      // Scene 3: Metrics (8.5s - 13.5s)
+      tl.to("#scene3", { opacity: 1, duration: 0.4 }, 8.5);
+      tl.fromTo("#s3-header", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 8.7);
+      tl.fromTo("#m-card1", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 9.0);
+      tl.fromTo("#m-card2", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 9.3);
+      tl.fromTo("#m-card3", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 9.6);
+      tl.fromTo("#s3-status", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 10.0);
+      tl.to("#scene3", { opacity: 0, scale: 0.98, duration: 0.5, ease: "power2.in" }, 13.0);
+
+      // Scene 4: Outro (13.5s - 18.0s)
+      tl.to("#scene4", { opacity: 1, duration: 0.4 }, 13.5);
+      tl.fromTo("#s4-logo", { opacity: 0, scale: 0.5, rotation: -10 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.8, ease: "back.out(1.7)" }, 13.7);
+      tl.fromTo("#s4-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 14.2);
+      tl.fromTo("#s4-tag", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 14.5);
+      tl.fromTo("#s4-cta", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power3.out" }, 14.9);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

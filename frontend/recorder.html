@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>GeoFull V4 — Grabador Nativo de Pantalla Wayland</title>
+    <style>
+        body {
+            background-color: #0B0F17;
+            color: #F8FAFC;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2.5rem;
+            border-radius: 1.25rem;
+            text-align: center;
+            max-width: 550px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        h1 { margin-top: 0; color: #38BDF8; font-size: 1.6rem; }
+        p { color: #94A3B8; font-size: 1rem; line-height: 1.6; }
+        .btn {
+            background: linear-gradient(135deg, #2563EB, #1D4ED8);
+            color: white;
+            border: none;
+            padding: 0.9rem 2rem;
+            font-size: 1.05rem;
+            font-weight: 600;
+            border-radius: 0.6rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 1.5rem;
+            display: inline-block;
+        }
+        .btn:hover { opacity: 0.95; transform: translateY(-1px); }
+        .btn-danger { background: linear-gradient(135deg, #DC2626, #B91C1C); }
+        .status {
+            margin-top: 1.5rem;
+            font-weight: 600;
+            font-size: 1.05rem;
+            color: #10B981;
+        }
+        .instructions {
+            background: rgba(15, 23, 42, 0.6);
+            border-left: 4px solid #38BDF8;
+            padding: 1rem;
+            text-align: left;
+            margin: 1.5rem 0;
+            border-radius: 0.4rem;
+            font-size: 0.9rem;
+            color: #CBD5E1;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🎥 Grabador de Pantalla GeoFull V4</h1>
+        <p>Herramienta integrada para capturar tu navegación completa sin pantallas negras bajo Wayland/KDE.</p>
+        
+        <div class="instructions">
+            <strong>📋 Pasos Rápidos:</strong>
+            <ol style="margin-bottom: 0; padding-left: 1.2rem;">
+                <li>Haz clic en el botón azul para seleccionar tu pantalla.</li>
+                <li>Cambia a la pestaña de <strong>GeoFull V4 (http://localhost:8080/sectorizacion)</strong> y realiza tu demostración.</li>
+                <li>Al terminar, vuelve a esta pestaña y haz clic en <strong>"Detener Grabación"</strong>.</li>
+            </ol>
+        </div>
+
+        <button id="startBtn" class="btn">🔴 Iniciar Grabación de Pantalla</button>
+        <button id="stopBtn" class="btn btn-danger" style="display:none;">⏹️ Detener Grabación y Procesar</button>
+        
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+
+        startBtn.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { frameRate: 30 }
+                });
+                
+                recordedChunks = [];
+                let options = { mimeType: 'video/webm' };
+                if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                    options = { mimeType: 'video/webm;codecs=vp9' };
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = e => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    status.innerText = "⏳ Guardando video grabado...";
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    
+                    try {
+                        await fetch('http://localhost:8089/upload-video', {
+                            method: 'POST',
+                            body: blob
+                        });
+                        status.innerText = "✅ ¡Video enviado correctamente al sistema! Ya puedes responder 'listo' en el chat.";
+                    } catch(err) {
+                        // Fallback download if backend receiver is unavailable
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = 'raw_screen_wayland.webm';
+                        document.body.appendChild(a);
+                        a.click();
+                        status.innerText = "✅ ¡Video descargado en tus Descargas! Guarda la grabación y responde 'listo'.";
+                    }
+                };
+
+                mediaRecorder.start(500);
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-block';
+                status.innerText = "🔴 Grabando activamente. Pasa a la pestaña http://localhost:8080/sectorizacion y realiza tu demostración.";
+                
+                stream.getVideoTracks()[0].onended = () => {
+                    if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+                };
+            } catch (err) {
+                console.error(err);
+                status.innerText = "❌ Error al acceder a la pantalla: " + err.message;
+            }
+        };
+
+        stopBtn.onclick = () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                stopBtn.style.display = 'none';
+            }
+        };
+    </script>
+</body>
+</html>

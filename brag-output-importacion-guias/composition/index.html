@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>GeoFull V4 — Importación de Guías & Sectorización</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background-color: #0b0f17;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f8fafc;
+        -webkit-font-smoothing: antialiased;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        background: radial-gradient(circle at 50% 30%, rgba(16, 185, 129, 0.12) 0%, rgba(11, 15, 23, 1) 75%);
+      }
+
+      .glass-card {
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+
+      .glow-emerald {
+        box-shadow: 0 0 40px rgba(16, 185, 129, 0.25);
+      }
+
+      .glow-blue {
+        box-shadow: 0 0 40px rgba(59, 130, 246, 0.25);
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Header styling */
+      .badge-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 20px;
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        border-radius: 9999px;
+        color: #34d399;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+      }
+
+      .scene-title {
+        font-size: 64px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        text-align: center;
+        color: #ffffff;
+        margin-bottom: 16px;
+      }
+
+      .scene-sub {
+        font-size: 26px;
+        color: #94a3b8;
+        text-align: center;
+        margin-bottom: 40px;
+      }
+
+      /* Scene 1: Dropzone UI */
+      .dropzone-card {
+        width: 900px;
+        padding: 50px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        border: 2px dashed rgba(16, 185, 129, 0.4);
+        border-radius: 28px;
+        background: rgba(15, 23, 42, 0.6);
+      }
+
+      .file-icon {
+        width: 84px;
+        height: 84px;
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        margin-bottom: 20px;
+      }
+
+      .drop-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #f8fafc;
+        margin-bottom: 8px;
+      }
+
+      .drop-desc {
+        font-size: 16px;
+        color: #94a3b8;
+      }
+
+      /* Scene 2: Progress & Pipeline */
+      .progress-container {
+        width: 1100px;
+        padding: 40px;
+      }
+
+      .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .progress-label {
+        font-size: 20px;
+        font-weight: 700;
+        color: #34d399;
+      }
+
+      .progress-pct {
+        font-size: 28px;
+        font-weight: 800;
+        font-family: monospace;
+        color: #ffffff;
+      }
+
+      .bar-track {
+        width: 100%;
+        height: 24px;
+        background: rgba(15, 23, 42, 0.9);
+        border-radius: 9999px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+        padding: 3px;
+        margin-bottom: 40px;
+      }
+
+      .bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+        border-radius: 9999px;
+      }
+
+      .pipeline-nodes {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .node-item {
+        flex: 1;
+        padding: 24px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .node-item.active {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+
+      .node-num {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: #10b981;
+        color: #0f172a;
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+      }
+
+      .node-text h4 { font-size: 18px; font-weight: 700; color: #ffffff; }
+      .node-text p { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+
+      /* Scene 3: Summary Report */
+      .summary-card {
+        width: 1200px;
+        padding: 48px;
+      }
+
+      .summary-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-b: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 24px;
+        margin-bottom: 36px;
+      }
+
+      .summary-top-title {
+        font-size: 28px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .total-pill {
+        padding: 8px 24px;
+        border-radius: 9999px;
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        color: #60a5fa;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+      }
+
+      .stat-box {
+        padding: 32px;
+        border-radius: 20px;
+        text-align: center;
+      }
+
+      .stat-box.emerald {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.25);
+      }
+
+      .stat-box.amber {
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.25);
+      }
+
+      .stat-box.red {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.25);
+      }
+
+      .stat-box-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+      .stat-box-title.emerald { color: #34d399; }
+      .stat-box-title.amber { color: #fbbf24; }
+      .stat-box-title.red { color: #f87171; }
+
+      .stat-box-num {
+        font-size: 56px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.02em;
+      }
+
+      .stat-box-pct {
+        font-size: 14px;
+        font-weight: 600;
+        font-family: monospace;
+        margin-top: 4px;
+      }
+
+      /* Scene 4: Outro */
+      .logo-box {
+        width: 120px;
+        height: 120px;
+        background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+        border-radius: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 56px;
+        font-weight: 900;
+        color: #ffffff;
+        box-shadow: 0 0 60px rgba(16, 185, 129, 0.4);
+        margin-bottom: 32px;
+      }
+
+      .outro-h1 {
+        font-size: 72px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: #ffffff;
+        margin-bottom: 16px;
+      }
+
+      .outro-sub {
+        font-size: 28px;
+        color: #94a3b8;
+        margin-bottom: 40px;
+      }
+
+      .cta-pill {
+        padding: 18px 48px;
+        background: #10b981;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 700;
+        border-radius: 9999px;
+        box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="18"
+      data-width="1920"
+      data-height="1080"
+    >
+      <audio id="music" data-start="0" data-duration="18" data-track-index="9" data-volume="0.3" src="assets/music/tech-bed.mp3"></audio>
+
+      <!-- Scene 1: Dropzone -->
+      <div id="scene1" class="scene clip" data-start="0" data-duration="3.5" data-track-index="0">
+        <div id="s1-tag" class="badge-tag">⚡ Módulo Sectorización V4</div>
+        <h1 id="s1-title" class="scene-title">IMPORTACIÓN MASIVA DE GUÍAS EXCEL / CSV</h1>
+        <p id="s1-sub" class="scene-sub">Validación Estricta de Plantillas SaaS & Geocodificación Automática</p>
+        <div id="s1-drop" class="glass-card dropzone-card glow-emerald">
+          <div class="file-icon">📊</div>
+          <h3 class="drop-title">Lote_Guias_Medellin_2026.xlsx</h3>
+          <p class="drop-desc">1,250 Registros • Plantilla 'Coordinadora Standard' Coincidida (100%)</p>
+        </div>
+      </div>
+
+      <!-- Scene 2: Live Processing Pipeline -->
+      <div id="scene2" class="scene clip" data-start="3.5" data-duration="5" data-track-index="1">
+        <h2 id="s2-title" class="scene-title">PROCESAMIENTO EN TIEMPO REAL</h2>
+        <div class="glass-card progress-container glow-blue">
+          <div class="progress-header">
+            <span class="progress-label">⚡ Ejecutando Pipeline PostGIS</span>
+            <span id="p-pct" class="progress-pct">0%</span>
+          </div>
+          <div class="bar-track">
+            <div id="p-bar" class="bar-fill"></div>
+          </div>
+          <div class="pipeline-nodes">
+            <div id="node1" class="node-item active">
+              <div class="node-num">1</div>
+              <div class="node-text">
+                <h4>Sanitizer V3</h4>
+                <p>Normalización Sintáctica</p>
+              </div>
+            </div>
+            <div id="node2" class="node-item active">
+              <div class="node-num">2</div>
+              <div class="node-text">
+                <h4>PostGIS 7 Niveles</h4>
+                <p>Geocodificador Catastral</p>
+              </div>
+            </div>
+            <div id="node3" class="node-item active">
+              <div class="node-num">3</div>
+              <div class="node-text">
+                <h4>Sectorizador</h4>
+                <p>Asignación ST_Contains</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 3: Summary Report -->
+      <div id="scene3" class="scene clip" data-start="8.5" data-duration="5" data-track-index="2">
+        <h2 id="s3-title" class="scene-title">INFORME RESUMEN DE IMPORTACIÓN</h2>
+        <div class="glass-card summary-card glow-emerald">
+          <div class="summary-top">
+            <h3 class="summary-top-title">Lote Procesado con Éxito</h3>
+            <div class="total-pill">1,250 Pedidos Totales</div>
+          </div>
+          <div class="stats-grid">
+            <div id="box1" class="stat-box emerald">
+              <p class="stat-box-title emerald">Geocodificados OK</p>
+              <div class="stat-box-num">1,180</div>
+              <p class="stat-box-pct text-emerald-400">94.4% del lote</p>
+            </div>
+            <div id="box2" class="stat-box amber">
+              <p class="stat-box-title amber">Fuera de Zona</p>
+              <div class="stat-box-num">45</div>
+              <p class="stat-box-pct text-amber-400">3.6% del lote</p>
+            </div>
+            <div id="box3" class="stat-box red">
+              <p class="stat-box-title red">No Geocodificados</p>
+              <div class="stat-box-num">25</div>
+              <p class="stat-box-pct text-red-400">2.0% del lote</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene 4: Outro -->
+      <div id="scene4" class="scene clip" data-start="13.5" data-duration="4.5" data-track-index="3">
+        <div id="s4-logo" class="logo-box">G4</div>
+        <h1 id="s4-h1" class="outro-h1">GeoFull V4</h1>
+        <p id="s4-sub" class="outro-sub">Importación Masiva & Sectorización Inteligente de Guías</p>
+        <div id="s4-cta" class="cta-pill">Procesamiento Instantáneo • Multi-Tenant</div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Scene 1: Dropzone (0.0s - 3.5s)
+      tl.to("#scene1", { opacity: 1, duration: 0.4 }, 0.0);
+      tl.fromTo("#s1-tag", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0.2);
+      tl.fromTo("#s1-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 0.4);
+      tl.fromTo("#s1-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 0.6);
+      tl.fromTo("#s1-drop", { opacity: 0, scale: 0.85, y: 30 }, { opacity: 1, scale: 1, y: 0, duration: 0.7, ease: "back.out(1.4)" }, 0.8);
+      tl.to("#scene1", { opacity: 0, scale: 0.98, duration: 0.5 }, 3.0);
+
+      // Scene 2: Live Processing Pipeline (3.5s - 8.5s)
+      tl.to("#scene2", { opacity: 1, duration: 0.4 }, 3.5);
+      tl.fromTo("#s2-title", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 3.7);
+      tl.fromTo("#p-bar", { width: "0%" }, { width: "100%", duration: 3.5, ease: "power1.inOut" }, 4.0);
+
+      // Counter animation synced with progress bar
+      const pctObj = { val: 0 };
+      tl.to(pctObj, {
+        val: 100,
+        duration: 3.5,
+        ease: "power1.inOut",
+        onUpdate: () => {
+          const el = document.getElementById("p-pct");
+          if (el) el.innerText = Math.round(pctObj.val) + "%";
+        }
+      }, 4.0);
+
+      tl.fromTo("#node1", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 }, 4.2);
+      tl.fromTo("#node2", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 }, 5.2);
+      tl.fromTo("#node3", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 }, 6.2);
+      tl.to("#scene2", { opacity: 0, scale: 0.98, duration: 0.5 }, 8.0);
+
+      // Scene 3: Summary Report (8.5s - 13.5s)
+      tl.to("#scene3", { opacity: 1, duration: 0.4 }, 8.5);
+      tl.fromTo("#s3-title", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 8.7);
+      tl.fromTo("#box1", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "back.out(1.4)" }, 9.0);
+      tl.fromTo("#box2", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "back.out(1.4)" }, 9.4);
+      tl.fromTo("#box3", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "back.out(1.4)" }, 9.8);
+      tl.to("#scene3", { opacity: 0, scale: 0.98, duration: 0.5 }, 13.0);
+
+      // Scene 4: Outro (13.5s - 18.0s)
+      tl.to("#scene4", { opacity: 1, duration: 0.4 }, 13.5);
+      tl.fromTo("#s4-logo", { opacity: 0, scale: 0.5, rotation: -10 }, { opacity: 1, scale: 1, rotation: 0, duration: 0.8, ease: "back.out(1.7)" }, 13.7);
+      tl.fromTo("#s4-h1", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 14.2);
+      tl.fromTo("#s4-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 14.5);
+      tl.fromTo("#s4-cta", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power3.out" }, 14.9);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
