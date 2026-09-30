@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Layers, Upload, Trash2, CheckCircle2, AlertCircle, RefreshCw, Power, FileJson } from 'lucide-react';
+import { Layers, Upload, Trash2, CheckCircle2, AlertCircle, RefreshCw, Power, FileJson, Barcode, Save, QrCode } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { Badge } from '../ui/Badge';
 import { Toast } from '../ui/Toast';
@@ -120,6 +120,33 @@ export function ZoneManager() {
     }
   };
 
+  const [barcodes, setBarcodes] = useState({});
+
+  const handleBarcodeInputChange = (zoneId, val) => {
+    setBarcodes((prev) => ({ ...prev, [zoneId]: val }));
+  };
+
+  const handleSaveBarcode = async (zoneId, zoneName) => {
+    const codeVal = barcodes[zoneId];
+    if (!codeVal || !codeVal.trim()) {
+      showToast('Ingresa un código de barras válido para la zona', 'error');
+      return;
+    }
+    try {
+      await axios.put(
+        `${API_BASE}/zones/${zoneId}/barcode`,
+        { codigo_barras: codeVal.trim() },
+        { headers: { 'X-Tenant-ID': tenantId } }
+      );
+      showToast(`Código de barras guardado para "${zoneName}"`, 'success');
+      dataCache.invalidateZones();
+      fetchZones();
+    } catch (err) {
+      console.error('Error guardando código de barras:', err);
+      showToast('Error al guardar código de barras', 'error');
+    }
+  };
+
   const handleDeleteZone = async (zoneId, name) => {
     if (!window.confirm(`¿Estás seguro de eliminar la zona "${name}"? Esta acción no se puede deshacer.`)) return;
     try {
@@ -236,53 +263,83 @@ export function ZoneManager() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {zones.map((z) => (
-              <div
-                key={z.id}
-                className={`p-4 rounded-xl border transition-all flex items-center justify-between ${
-                  z.activa
-                    ? 'border-slate-700/80 bg-slate-900/50 hover:border-slate-600'
-                    : 'border-slate-800/40 bg-slate-950/40 opacity-60'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span
-                    className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm"
-                    style={{ backgroundColor: z.color || '#10b981' }}
-                  />
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-white truncate" title={z.nombre}>
-                      {z.nombre}
-                    </h4>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {z.codigo || 'S/N'}
-                    </span>
+            {zones.map((z) => {
+              const currentBarcode = barcodes[z.id] !== undefined 
+                ? barcodes[z.id] 
+                : (z.codigo_barras || `ZONA-${z.nombre.toUpperCase().replace(/\s+/g, '-')}`);
+
+              return (
+                <div
+                  key={z.id}
+                  className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                    z.activa
+                      ? 'border-slate-700/80 bg-slate-900/60 hover:border-slate-600'
+                      : 'border-slate-800/40 bg-slate-950/40 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between min-w-0 gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm"
+                        style={{ backgroundColor: z.color || '#10b981' }}
+                      />
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white truncate" title={z.nombre}>
+                          {z.nombre}
+                        </h4>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {z.codigo || 'S/N'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleToggleActive(z.id)}
+                        title={z.activa ? 'Desactivar Zona' : 'Activar Zona'}
+                        className={`p-1.5 rounded-lg border transition-colors ${
+                          z.activa
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                            : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                        }`}
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteZone(z.id, z.nombre)}
+                        title="Eliminar Zona"
+                        className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Sección Configurar Código de Barras */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Barcode className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={currentBarcode}
+                        onChange={(e) => handleBarcodeInputChange(z.id, e.target.value)}
+                        placeholder="Código de Barras"
+                        className="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg pl-8 pr-2 py-1 text-[11px] font-mono text-emerald-400 placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleSaveBarcode(z.id, z.nombre)}
+                      title="Guardar Código de Barras"
+                      className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Save className="w-3 h-3" />
+                      Guardar
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => handleToggleActive(z.id)}
-                    title={z.activa ? 'Desactivar Zona' : 'Activar Zona'}
-                    className={`p-1.5 rounded-lg border transition-colors ${
-                      z.activa
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                        : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
-                    }`}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    onClick={() => handleDeleteZone(z.id, z.nombre)}
-                    title="Eliminar Zona"
-                    className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </GlassCard>

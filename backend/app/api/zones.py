@@ -19,8 +19,19 @@ class ZoneResponse(BaseModel):
     id: uuid.UUID
     nombre: str
     codigo: Optional[str] = None
+    codigo_barras: Optional[str] = None
     color: str = "#10b981"
     activa: bool
+
+
+class UpdateZoneBarcode(BaseModel):
+    codigo_barras: str
+
+
+class InventoryScanPackageReq(BaseModel):
+    barcode: str
+    zone_id: str
+
 
 
 def extract_features_with_props(geojson_input: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -40,10 +51,10 @@ def extract_features_with_props(geojson_input: Dict[str, Any]) -> List[Dict[str,
 
 @router.get("/", response_model=List[ZoneResponse])
 async def list_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
-    """Lista las zonas GeoJSON de la empresa."""
+    """Lista las zonas GeoJSON de la empresa con sus códigos de barras."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         query = text("""
-            SELECT id, nombre_zona, codigo_zona, activa
+            SELECT id, nombre_zona, codigo_zona, codigo_barras, activa
             FROM zonas_personalizadas
             WHERE tenant_id = :tenant_id
             ORDER BY nombre_zona ASC
@@ -55,6 +66,7 @@ async def list_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-I
         return [
             ZoneResponse(
                 id=r.id, nombre=r.nombre_zona, codigo=r.codigo_zona,
+                codigo_barras=r.codigo_barras,
                 color=colors[idx % len(colors)], activa=r.activa
             )
             for idx, r in enumerate(rows)
@@ -282,3 +294,192 @@ async def toggle_zone(zone_id: uuid.UUID, x_tenant_id: str = Header("empresa_dem
         if not r:
             raise HTTPException(status_code=404, detail="Zona no encontrada")
         return {"status": "ok", "activa": r.activa}
+
+
+@router.put("/{zone_id}/barcode")
+async def update_zone_barcode(
+    zone_id: uuid.UUID,
+    payload: UpdateZoneBarcode,
+    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+):
+    """Actualiza el código de barras asignado a una zona."""
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        sql = text("""
+            UPDATE zonas_personalizadas 
+            SET codigo_barras = :barcode 
+            WHERE id = :id AND tenant_id = :tenant_id 
+            RETURNING id, nombre_zona, codigo_barras
+        """)
+        res = await session.execute(sql, {
+            "id": zone_id,
+            "barcode": payload.codigo_barras.strip(),
+            "tenant_id": x_tenant_id
+        })
+        await session.commit()
+        r = res.first()
+        if not r:
+            raise HTTPException(status_code=404, detail="Zona no encontrada")
+        return {
+            "status": "ok",
+            "id": str(r.id),
+            "nombre": r.nombre_zona,
+            "codigo_barras": r.codigo_barras
+        }
+
+
+@router.get("/inventory-summary")
+async def get_inventory_summary(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+    """Obtiene el listado de zonas activas con conteo en tiempo real de paquetes en bodega."""
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        sql = text("""
+            SELECT 
+                z.id,
+                z.nombre_zona,
+                z.codigo_zona,
+                z.codigo_barras,
+                z.activa,
+                COUNT(p.id) FILTER (WHERE p.estado = 'EN_BODEGA') as total_bodega
+            FROM zonas_personalizadas z
+            LEFT JOIN pedidos p ON p.zona_id = z.id AND p.tenant_id = z.tenant_id
+            WHERE z.tenant_id = :tenant_id AND z.activa = true
+            GROUP BY z.id, z.nombre_zona, z.codigo_zona, z.codigo_barras, z.activa
+            ORDER BY z.nombre_zona ASC
+        """)
+        res = await session.execute(sql, {"tenant_id": x_tenant_id})
+        rows = res.fetchall()
+
+        colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16']
+
+        return [
+            {
+                "id": str(r.id),
+                "nombre": r.nombre_zona,
+                "codigo": r.codigo_zona or "",
+                "codigo_barras": r.codigo_barras or f"ZONA-{r.nombre_zona.upper().replace(' ', '-')}",
+                "total_bodega": r.total_bodega or 0,
+                "color": colors[idx % len(colors)]
+            }
+            for idx, r in enumerate(rows)
+        ]
+
+
+@router.post("/reset-inventory/{zone_id}")
+async def reset_zone_inventory(
+    zone_id: uuid.UUID,
+    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+):
+    """Reinicia el contador de la zona pasando los paquetes previos en bodega a PENDIENTE_REINVENTARIO."""
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        sql = text("""
+            UPDATE pedidos 
+            SET estado = 'PENDIENTE_REINVENTARIO', fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE tenant_id = :tenant_id AND zona_id = :zone_id AND estado = 'EN_BODEGA'
+            RETURNING id
+        """)
+        res = await session.execute(sql, {"tenant_id": x_tenant_id, "zone_id": zone_id})
+        await session.commit()
+        return {
+            "status": "ok",
+            "zone_id": str(zone_id),
+            "afectados": res.rowcount,
+            "message": f"Contador reiniciado a cero. {res.rowcount} paquetes marcados como PENDIENTE_REINVENTARIO."
+        }
+
+
+@router.post("/inventory-scan-package")
+async def scan_package_inventory(
+    payload: InventoryScanPackageReq,
+    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+):
+    """Escanear un paquete/guía y ubicarlo en la zona activa en estado EN_BODEGA."""
+    barcode = payload.barcode.strip()
+    try:
+        zone_id = uuid.UUID(payload.zone_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="zone_id no es un UUID válido")
+
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        # 1. Obtener nombre de la zona destino
+        z_query = text("SELECT id, nombre_zona FROM zonas_personalizadas WHERE id = :zid AND tenant_id = :tenant_id")
+        z_res = await session.execute(z_query, {"zid": zone_id, "tenant_id": x_tenant_id})
+        zone_row = z_res.first()
+        if not zone_row:
+            raise HTTPException(status_code=404, detail="La zona seleccionada no existe.")
+
+        target_zone_name = zone_row.nombre_zona
+
+        # 2. Buscar si la guía existe en pedidos
+        p_query = text("""
+            SELECT id, guia, cliente, direccion_original, zona_id, zona_nombre, estado 
+            FROM pedidos 
+            WHERE tenant_id = :tenant_id AND guia = :guia
+        """)
+        p_res = await session.execute(p_query, {"tenant_id": x_tenant_id, "guia": barcode})
+        pedido = p_res.first()
+
+        zone_changed = False
+        is_new = False
+
+        if pedido:
+            # Si el paquete existía previamente y estaba en otra zona o no estaba en bodega
+            if str(pedido.zona_id) != str(zone_id) or pedido.estado != 'EN_BODEGA':
+                zone_changed = True
+
+            upd_query = text("""
+                UPDATE pedidos 
+                SET zona_id = :zone_id,
+                    zona_nombre = :zone_name,
+                    estado = 'EN_BODEGA',
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = :id AND tenant_id = :tenant_id
+                RETURNING id, guia, cliente, direccion_original, zona_nombre, estado
+            """)
+            upd_res = await session.execute(upd_query, {
+                "zone_id": zone_id,
+                "zone_name": target_zone_name,
+                "id": pedido.id,
+                "tenant_id": x_tenant_id
+            })
+            await session.commit()
+            updated_p = upd_res.first()
+            return {
+                "status": "ok",
+                "is_new": False,
+                "zone_changed": zone_changed,
+                "previous_zone": pedido.zona_nombre or "Sin Zona",
+                "guia": updated_p.guia,
+                "cliente": updated_p.cliente or "Cliente no registrado",
+                "direccion": updated_p.direccion_original,
+                "zona_nombre": updated_p.zona_nombre,
+                "estado": updated_p.estado
+            }
+        else:
+            # Guía nueva: Se crea automáticamente en estado EN_BODEGA
+            ins_query = text("""
+                INSERT INTO pedidos (
+                    tenant_id, guia, cliente, direccion_original, zona_id, zona_nombre, estado
+                ) VALUES (
+                    :tenant_id, :guia, 'Ingreso Manual Bodega', 'Registrado en escaneo de inventario', :zone_id, :zone_name, 'EN_BODEGA'
+                )
+                RETURNING id, guia, cliente, direccion_original, zona_nombre, estado
+            """)
+            ins_res = await session.execute(ins_query, {
+                "tenant_id": x_tenant_id,
+                "guia": barcode,
+                "zone_id": zone_id,
+                "zone_name": target_zone_name
+            })
+            await session.commit()
+            new_p = ins_res.first()
+            return {
+                "status": "ok",
+                "is_new": True,
+                "zone_changed": True,
+                "previous_zone": "Nueva Guía",
+                "guia": new_p.guia,
+                "cliente": new_p.cliente,
+                "direccion": new_p.direccion_original,
+                "zona_nombre": new_p.zona_nombre,
+                "estado": new_p.estado
+            }
+

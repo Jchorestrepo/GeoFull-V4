@@ -12,6 +12,7 @@ import { PersonalPage } from './pages/PersonalPage';
 import { ConciliacionPage } from './pages/ConciliacionPage';
 import { HistorialPage } from './pages/HistorialPage';
 import { SaaSAdminPage } from './pages/SaaSAdminPage';
+import { InventarioZonasPage } from './pages/InventarioZonasPage';
 
 function SuperAdminRoute({ children }) {
   const { user, isImpersonating } = useAuth();
@@ -44,6 +45,7 @@ function MainAppContent() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to={defaultHome} replace />} />
           <Route path="sectorizacion" element={<SectorizacionPage />} />
+          <Route path="inventario-zonas" element={<InventarioZonasPage />} />
           <Route path="mapa-bodega" element={<MapaBodegaPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="configuracion" element={<ConfiguracionPage />} />

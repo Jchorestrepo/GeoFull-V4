@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
@@ -19,7 +19,10 @@ import {
   Phone,
   User,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -27,6 +30,9 @@ export function SectorizacionPage() {
   const [orders, setOrders] = useState([]);
   const [zones, setZones] = useState([]);
   const [filterZone, setFilterZone] = useState('TODOS');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadTab, setUploadTab] = useState('ORDERS');
   const [toast, setToast] = useState(null);
@@ -108,11 +114,52 @@ export function SectorizacionPage() {
     }
   };
 
-  const filteredOrders = orders.filter(o => {
-    if (filterZone === 'TODOS') return true;
-    if (filterZone === 'FUERA_DE_ZONA') return !o.zona_nombre;
-    return o.zona_nombre === filterZone;
-  });
+  // Cálculo O(N) memoizado para conteos globales y por zona (Evita recalcular N*M en cada render)
+  const { sectorizedCount, unzonedCount, zoneCountsMap } = useMemo(() => {
+    let sec = 0;
+    let unz = 0;
+    const map = {};
+    for (let i = 0; i < orders.length; i++) {
+      const o = orders[i];
+      if (o.zona_nombre) {
+        sec++;
+        map[o.zona_nombre] = (map[o.zona_nombre] || 0) + 1;
+      } else {
+        unz++;
+      }
+    }
+    return { sectorizedCount: sec, unzonedCount: unz, zoneCountsMap: map };
+  }, [orders]);
+
+  // Filtrado memoizado por Zona y Búsqueda Instantánea por Guía / Cliente / Dirección
+  const filteredOrders = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return orders.filter(o => {
+      // Filtro de Zona
+      if (filterZone === 'FUERA_DE_ZONA' && o.zona_nombre) return false;
+      if (filterZone !== 'TODOS' && filterZone !== 'FUERA_DE_ZONA' && o.zona_nombre !== filterZone) return false;
+
+      // Filtro de Búsqueda
+      if (!term) return true;
+      const guiaMatch = o.guia?.toLowerCase().includes(term);
+      const clienteMatch = o.cliente?.toLowerCase().includes(term);
+      const dirMatch = (o.direccion_limpia || o.direccion_original)?.toLowerCase().includes(term);
+      const phoneMatch = o.telefono_cliente?.toLowerCase().includes(term);
+      return guiaMatch || clienteMatch || dirMatch || phoneMatch;
+    });
+  }, [orders, filterZone, searchTerm]);
+
+  // Reiniciar a la página 1 cuando cambia el filtro o término de búsqueda
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterZone, searchTerm]);
+
+  // Paginación Ultra-Rápida Frontend
+  const totalPages = Math.ceil(filteredOrders.length / pageSize) || 1;
+  const paginatedOrders = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, currentPage, pageSize]);
 
   return (
     <div className="space-y-6">
@@ -172,7 +219,7 @@ export function SectorizacionPage() {
           <div>
             <p className="text-xs text-slate-400">Pedidos Sectorizados (Bodega)</p>
             <h3 className="text-2xl font-extrabold text-white">
-              {orders.filter(o => o.zona_nombre).length} / {orders.length}
+              {sectorizedCount} / {orders.length}
             </h3>
             <p className="text-[11px] text-slate-400 mt-0.5">Asignación automática</p>
           </div>
@@ -185,7 +232,7 @@ export function SectorizacionPage() {
           <div>
             <p className="text-xs text-slate-400">Fuera de Zona</p>
             <h3 className="text-2xl font-extrabold text-white">
-              {orders.filter(o => !o.zona_nombre).length} Pedidos
+              {unzonedCount} Pedidos
             </h3>
             <p className="text-[11px] text-red-400 mt-0.5">Requieren asignación manual</p>
           </div>
@@ -207,14 +254,14 @@ export function SectorizacionPage() {
             <Badge variant="titanium">GeoJSON</Badge>
           </div>
 
-          <div className="space-y-2 max-h-[440px] overflow-y-auto custom-scrollbar">
+          <div className="space-y-2 max-h-[480px] overflow-y-auto custom-scrollbar">
             {zones.length === 0 ? (
               <div className="p-6 text-center text-slate-500 text-xs">
                 No hay zonas GeoJSON cargadas. Usa el botón "Importar Pedidos / Zonas".
               </div>
             ) : (
               zones.map((z) => {
-                const countInZone = orders.filter(o => o.zona_nombre === z.nombre).length;
+                const countInZone = zoneCountsMap[z.nombre] || 0;
                 return (
                   <div
                     key={z.id || z.nombre}
@@ -250,39 +297,58 @@ export function SectorizacionPage() {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-white/10 pb-3">
             <div>
               <h3 className="font-bold text-sm text-white">Pedidos Importados en Bodega</h3>
-              <p className="text-[11px] text-slate-400">Mostrando: Guía, Dirección Limpia, Cliente, Teléfono y Zona Asignada</p>
+              <p className="text-[11px] text-slate-400">Mostrando Guía, Dirección, Cliente, Teléfono y Zona Asignada</p>
             </div>
 
-            {/* Zone Filter Pill */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
+            {/* Zone Filter & Instant Search */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar guía, cliente, dir..."
+                  className="pl-8 pr-3 py-1.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60 transition-all w-44 md:w-56"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={() => setFilterZone('TODOS')}
-                className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
                   filterZone === 'TODOS'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
                 }`}
               >
                 Todos ({orders.length})
               </button>
               <button
                 onClick={() => setFilterZone('FUERA_DE_ZONA')}
-                className={`px-3 py-1 rounded-xl text-[11px] font-semibold transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
                   filterZone === 'FUERA_DE_ZONA'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                    ? 'bg-red-600 text-white shadow-md'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
                 }`}
               >
-                Fuera de Zona ({orders.filter(o => !o.zona_nombre).length})
+                Fuera ({unzonedCount})
               </button>
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-[440px] overflow-y-auto custom-scrollbar">
+          {/* Table Container */}
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40">
+                <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40 sticky top-0 z-10 backdrop-blur-md">
                   <th className="p-3">Empresa</th>
                   <th className="p-3">Guía</th>
                   <th className="p-3">Dirección</th>
@@ -293,14 +359,14 @@ export function SectorizacionPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {filteredOrders.length === 0 ? (
+                {paginatedOrders.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
-                      No hay pedidos cargados en la zona seleccionada. Usa el botón "Importar Pedidos / Zonas".
+                      {searchTerm ? 'No se encontraron pedidos que coincidan con la búsqueda.' : 'No hay pedidos cargados en la zona seleccionada.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((o) => (
+                  paginatedOrders.map((o) => (
                     <tr key={o.id} className="hover:bg-slate-800/30 transition-all">
                       <td className="p-3">
                         <Badge variant="purple" className="text-[10px] font-mono uppercase">
@@ -356,6 +422,52 @@ export function SectorizacionPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Footer Controls: Pagination & Items Per Page */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <span>Mostrar por página:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-950 border border-white/10 rounded-xl px-2 py-1 text-white font-mono focus:outline-none"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+              </select>
+              <span className="text-[11px] text-slate-500">
+                (Mostrando {filteredOrders.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredOrders.length)} de {filteredOrders.length} pedidos)
+              </span>
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-slate-900 text-slate-300 border border-white/5 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="px-3 py-1 font-mono font-bold text-white bg-slate-950/80 border border-white/10 rounded-xl text-xs">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-slate-900 text-slate-300 border border-white/5 transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </GlassCard>
       </div>

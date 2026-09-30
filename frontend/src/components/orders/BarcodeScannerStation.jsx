@@ -72,6 +72,9 @@ export function BarcodeScannerStation({ onOrderFound }) {
 
       osc.start();
       osc.stop(audioCtx.currentTime + 0.3);
+      setTimeout(() => {
+        try { audioCtx.close(); } catch (err) {}
+      }, 350);
     } catch (e) {}
   };
 

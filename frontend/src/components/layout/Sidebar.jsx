@@ -9,12 +9,14 @@ import {
   Settings,
   ShieldAlert,
   Compass,
-  LayoutDashboard
+  LayoutDashboard,
+  ScanBarcode
 } from 'lucide-react';
 
 const NAVIGATION_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/sectorizacion', label: 'Sectorización', icon: MapPin, badge: 'Zonas' },
+  { path: '/inventario-zonas', label: 'Inventario Zonas', icon: ScanBarcode, badge: 'Escáner' },
   { path: '/conciliacion', label: 'Control & Conciliación', icon: PackageCheck },
   { path: '/personal', label: 'Nóminas', icon: Banknote },
   { path: '/historial', label: 'Historial / Rastreo', icon: History },
