@@ -1422,7 +1422,7 @@ async def get_dashboard_executive_stats(x_tenant_id: str = Header("empresa_demo"
         sla_pct = round((entregados / despachados_totales * 100), 1) if despachados_totales > 0 else 0.0
         rooftop_pct = round((ord_stats.precision_rooftop / total_pedidos * 100), 1) if total_pedidos > 0 else 0.0
 
-        # 2. Guías distribuidas por Zonas GeoJSON (Top 6)
+        # 2. Guías distribuidas por Zonas GeoJSON (Todas las zonas activas)
         query_zonas = text("""
             SELECT 
                 COALESCE(zona_nombre, 'Sin Zona Asignada') as zona,
@@ -1431,7 +1431,7 @@ async def get_dashboard_executive_stats(x_tenant_id: str = Header("empresa_demo"
             WHERE tenant_id = :tenant_id
             GROUP BY zona_nombre
             ORDER BY cantidad DESC
-            LIMIT 6
+            LIMIT 100
         """)
         res_zonas = await session.execute(query_zonas, {"tenant_id": x_tenant_id})
         zonas_list = [{"zona": r.zona, "cantidad": r.cantidad} for r in res_zonas.fetchall()]

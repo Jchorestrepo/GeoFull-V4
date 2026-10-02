@@ -24,7 +24,10 @@ import {
   Map,
   Layers,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Copy,
+  Check,
+  FileText
 } from 'lucide-react';
 import { dataCache } from '../lib/dataCache';
 import axios from 'axios';
@@ -35,6 +38,7 @@ export function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [toast, setToast] = useState(null);
   const [showMap, setShowMap] = useState(true);
+  const [copied, setCopied] = useState(false);
   const [isStale, setIsStale] = useState(dataCache.isStale('dashboard'));
   const { activeTenantId } = useAuth();
   const navigate = useNavigate();
@@ -105,6 +109,32 @@ export function DashboardPage() {
   const precision = stats?.precision_catastral || {};
   const zonas = stats?.zonas_distribucion || [];
   const flota = stats?.top_flota || [];
+
+  const handleCopyZonesText = () => {
+    if (!zonas || zonas.length === 0) {
+      setToast({ message: 'No hay paquetes o zonas para copiar', type: 'error' });
+      return;
+    }
+
+    // Excluir registros 'Sin Zona Asignada' o 'Fuera de Zona'
+    const validZones = zonas.filter(z => {
+      if (!z.zona) return false;
+      const lower = z.zona.toLowerCase();
+      return !lower.includes('sin zona') && !lower.includes('fuera');
+    });
+
+    if (validZones.length === 0) {
+      setToast({ message: 'No hay zonas asignadas para copiar', type: 'error' });
+      return;
+    }
+
+    // Formato: Cantidad + Tabulación (\t) + Zona en minúsculas
+    const textToCopy = validZones.map(z => `${z.cantidad}\t${z.zona.toLowerCase()}`).join('\n');
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    setToast({ message: '📋 Resumen (Cantidad + Tab + Zona) copiado al portapapeles', type: 'success' });
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   return (
     <div className="space-y-6 pb-8">
@@ -243,7 +273,7 @@ export function DashboardPage() {
       {/* MAPA CARTOGRÁFICO EMBEDDED EN DASHBOARD */}
       <div id="mapa-dashboard">
         <GlassCard className="p-5 space-y-4 border border-blue-500/20 shadow-2xl">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
                 <Map className="w-6 h-6" />
@@ -259,14 +289,30 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => setShowMap(!showMap)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-white/10 transition-all"
-            >
-              <Layers className="w-3.5 h-3.5 text-blue-400" />
-              <span>{showMap ? 'Ocultar Mapa' : 'Desplegar Mapa'}</span>
-              {showMap ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
+            {/* Action buttons: Copy zones text + Toggle map */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCopyZonesText}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-md active:scale-95 ${
+                  copied
+                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-emerald-500/10'
+                    : 'bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border-emerald-500/40'
+                }`}
+                title="Copiar lista de paquetes por zona en texto plano con tabulación"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-300 animate-bounce" /> : <Copy className="w-3.5 h-3.5 text-emerald-400" />}
+                <span>{copied ? '¡Copiado!' : 'Copiar Texto Zonas'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowMap(!showMap)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-white/10 transition-all"
+              >
+                <Layers className="w-3.5 h-3.5 text-blue-400" />
+                <span>{showMap ? 'Ocultar Mapa' : 'Desplegar Mapa'}</span>
+                {showMap ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
           {showMap && (
