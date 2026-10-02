@@ -2,8 +2,9 @@ from typing import List, Optional, Dict, Any
 import uuid
 import json
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Header, Query, status
+from fastapi import APIRouter, HTTPException, Header, Query, status, Depends
 from pydantic import BaseModel
+from app.core.dependencies import get_current_user, get_tenant_id
 from sqlalchemy import text
 from app.core.database import get_db_session
 from app.geocoder.normalizer import desde_resultado
@@ -103,7 +104,7 @@ async def list_orders(
     solo_bodega: Optional[bool] = Query(False),
     guia: Optional[str] = Query(None),
     limit: int = Query(10000, le=50000),
-    x_tenant_id: str = Header(..., alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Lista pedidos del tenant con filtros por estado, zona, guía o sólo paquetes activos en bodega/ruta."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -133,7 +134,7 @@ async def list_orders(
 @router.post("/process-single", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def process_single_order(
     req: OrderCreateRequest,
-    x_tenant_id: str = Header(..., alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Procesa una guía individual: Normalizador -> Geocoder -> Sectorizer -> UPSERT en BD."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -234,7 +235,7 @@ async def process_single_order(
 async def assign_zone_manually(
     order_id: uuid.UUID,
     req: AssignZoneRequest,
-    x_tenant_id: str = Header(..., alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Asigna o reasigna manualmente una zona a un pedido (ej: pedidos FUERA_DE_ZONA)."""
     async for session in get_db_session(tenant_id=x_tenant_id):

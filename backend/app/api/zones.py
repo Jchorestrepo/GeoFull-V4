@@ -1,8 +1,9 @@
 from typing import List, Optional, Any, Dict
 import uuid
 import json
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, status, Depends
 from pydantic import BaseModel
+from app.core.dependencies import get_current_user, get_tenant_id
 from sqlalchemy import text
 from app.core.database import get_db_session
 
@@ -50,7 +51,7 @@ def extract_features_with_props(geojson_input: Dict[str, Any]) -> List[Dict[str,
 
 
 @router.get("/", response_model=List[ZoneResponse])
-async def list_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def list_zones(x_tenant_id: str = Depends(get_tenant_id)):
     """Lista las zonas GeoJSON de la empresa con sus códigos de barras."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         query = text("""
@@ -74,7 +75,7 @@ async def list_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-I
 
 
 @router.get("/geojson")
-async def get_zones_geojson(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def get_zones_geojson(x_tenant_id: str = Depends(get_tenant_id)):
     """Devuelve la FeatureCollection GeoJSON completa de las zonas activas de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         query = text("""
@@ -118,7 +119,7 @@ async def get_zones_geojson(x_tenant_id: str = Header("empresa_demo", alias="X-T
 @router.post("/import-geojson", status_code=status.HTTP_201_CREATED)
 async def import_zone_geojson(
     req: ZoneCreateGeoJSON,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Importa polígonos/sectores desde cualquier archivo GeoJSON (FeatureCollection, Feature, Polygon o MultiPolygon)."""
     features = extract_features_with_props(req.geojson_geometry)
@@ -257,7 +258,7 @@ async def import_zone_geojson(
 
 
 @router.delete("/purge")
-async def purge_all_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def purge_all_zones(x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina todas las zonas personalizadas de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id")
@@ -267,7 +268,7 @@ async def purge_all_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Ten
 
 
 @router.delete("/{zone_id}")
-async def delete_zone(zone_id: uuid.UUID, x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def delete_zone(zone_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina una zona específica por ID."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM zonas_personalizadas WHERE id = :id AND tenant_id = :tenant_id")
@@ -279,7 +280,7 @@ async def delete_zone(zone_id: uuid.UUID, x_tenant_id: str = Header("empresa_dem
 
 
 @router.put("/{zone_id}/toggle")
-async def toggle_zone(zone_id: uuid.UUID, x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def toggle_zone(zone_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
     """Alterna el estado activa/inactiva de una zona."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("""
@@ -300,7 +301,7 @@ async def toggle_zone(zone_id: uuid.UUID, x_tenant_id: str = Header("empresa_dem
 async def update_zone_barcode(
     zone_id: uuid.UUID,
     payload: UpdateZoneBarcode,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Actualiza el código de barras asignado a una zona."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -328,7 +329,7 @@ async def update_zone_barcode(
 
 
 @router.get("/inventory-summary")
-async def get_inventory_summary(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def get_inventory_summary(x_tenant_id: str = Depends(get_tenant_id)):
     """Obtiene el listado de zonas activas con conteo en tiempo real de paquetes en bodega."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("""
@@ -366,7 +367,7 @@ async def get_inventory_summary(x_tenant_id: str = Header("empresa_demo", alias=
 @router.post("/reset-inventory/{zone_id}")
 async def reset_zone_inventory(
     zone_id: uuid.UUID,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Reinicia el contador de la zona pasando los paquetes previos en bodega a PENDIENTE_REINVENTARIO."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -389,7 +390,7 @@ async def reset_zone_inventory(
 @router.post("/inventory-scan-package")
 async def scan_package_inventory(
     payload: InventoryScanPackageReq,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Escanear un paquete/guía y ubicarlo en la zona activa en estado EN_BODEGA."""
     barcode = payload.barcode.strip()

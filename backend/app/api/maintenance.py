@@ -1,8 +1,9 @@
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, status, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
+from app.core.dependencies import get_current_user, get_tenant_id
 
 router = APIRouter(prefix="/maintenance", tags=["Mantenimiento y Purga de Datos"])
 
@@ -12,7 +13,7 @@ class PurgeConfirmRequest(BaseModel):
 
 
 @router.post("/purge-orders")
-async def purge_orders(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def purge_orders(x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina únicamente la totalidad de los pedidos cargados en la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM pedidos WHERE tenant_id = :tenant_id")
@@ -26,7 +27,7 @@ async def purge_orders(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant
 
 
 @router.post("/purge-zones")
-async def purge_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def purge_zones(x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina únicamente todas las zonas personalizadas de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id")
@@ -40,7 +41,7 @@ async def purge_zones(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-
 
 
 @router.post("/purge-drivers")
-async def purge_drivers(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def purge_drivers(x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina únicamente la nómina de conductores de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM personal_conductores WHERE tenant_id = :tenant_id")
@@ -56,7 +57,7 @@ async def purge_drivers(x_tenant_id: str = Header("empresa_demo", alias="X-Tenan
 @router.post("/purge-all")
 async def purge_all_data(
     req: PurgeConfirmRequest,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Acción destructiva: Purga al 100% todos los datos operacionales de la empresa activa."""
     if req.confirmation.strip().upper() not in ("ELIMINAR TODO", "CONFIRMAR"):

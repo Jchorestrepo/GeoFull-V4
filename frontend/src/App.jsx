@@ -40,7 +40,7 @@ function MainAppContent() {
   const defaultHome = user?.rol === 'super_admin' ? '/saas-admin' : '/sectorizacion';
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to={defaultHome} replace />} />

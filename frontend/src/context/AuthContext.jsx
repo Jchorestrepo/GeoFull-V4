@@ -22,7 +22,8 @@ export function AuthProvider({ children }) {
       const currentToken = localStorage.getItem('v4_token');
       const currentTenant = localStorage.getItem('active_tenant_id') || 'global';
 
-      if (!config.headers.Authorization && currentToken) {
+      const hasAuth = config.headers?.Authorization || (config.headers?.get && config.headers.get('Authorization'));
+      if (!hasAuth && currentToken) {
         config.headers.Authorization = `Bearer ${currentToken}`;
       }
       config.headers['X-Tenant-ID'] = currentTenant;
@@ -52,6 +53,10 @@ export function AuthProvider({ children }) {
     const res = await axios.post(`${API_BASE}/auth/login`, { email, password });
     const { access_token, user: userData } = res.data;
 
+    // Limpiar restos de cualquier sesión anterior de suplantación
+    localStorage.removeItem('super_admin_backup_token');
+    localStorage.removeItem('super_admin_backup_user');
+
     setToken(access_token);
     setUser(userData);
     const tenantToSet = userData.tenant_id || 'global';
@@ -67,6 +72,10 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = async (credential) => {
     const res = await axios.post(`${API_BASE}/auth/google`, { credential });
     const { access_token, user: userData } = res.data;
+
+    // Limpiar restos de cualquier sesión anterior de suplantación
+    localStorage.removeItem('super_admin_backup_token');
+    localStorage.removeItem('super_admin_backup_user');
 
     setToken(access_token);
     setUser(userData);
@@ -90,19 +99,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('super_admin_backup_user');
   };
 
-  const switchTenant = (tenantId) => {
-    setActiveTenantId(tenantId);
-    localStorage.setItem('active_tenant_id', tenantId);
-    if (user) {
-      const updatedUser = { ...user, tenant_id: tenantId };
-      setUser(updatedUser);
-      localStorage.setItem('v4_user', JSON.stringify(updatedUser));
-    }
-  };
-
   const impersonateTenant = async (tenantId) => {
     const backupToken = localStorage.getItem('super_admin_backup_token');
-    const adminToken = backupToken || token;
+    const adminToken = backupToken || localStorage.getItem('v4_token') || token;
 
     if (!backupToken && token && user?.rol === 'super_admin') {
       localStorage.setItem('super_admin_backup_token', token);
@@ -133,11 +132,11 @@ export function AuthProvider({ children }) {
       const parsedUser = JSON.parse(backupUser);
       setToken(backupToken);
       setUser(parsedUser);
-      setActiveTenantId(parsedUser.tenant_id || 'global');
+      setActiveTenantId('global');
 
       localStorage.setItem('v4_token', backupToken);
       localStorage.setItem('v4_user', backupUser);
-      localStorage.setItem('active_tenant_id', parsedUser.tenant_id || 'global');
+      localStorage.setItem('active_tenant_id', 'global');
 
       localStorage.removeItem('super_admin_backup_token');
       localStorage.removeItem('super_admin_backup_user');
@@ -158,7 +157,6 @@ export function AuthProvider({ children }) {
         login,
         loginWithGoogle,
         logout,
-        switchTenant,
         impersonateTenant,
         restoreSuperAdminSession,
       }}

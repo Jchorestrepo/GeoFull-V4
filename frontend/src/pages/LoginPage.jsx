@@ -32,38 +32,9 @@ export function LoginPage() {
     }
   };
 
-  // Autenticación de demostración directa con Google token para jchorestrepo@gmail.com
-  const handleDirectGoogleLogin = async (email, name) => {
-    setLoading(true);
-    try {
-      // Simulación de JWT Google Token Header.Payload.Sig
-      const mockPayload = btoa(JSON.stringify({
-        email: email,
-        name: name,
-        iss: "https://accounts.google.com",
-        aud: GOOGLE_CLIENT_ID,
-        exp: Math.floor(Date.now() / 1000) + 3600
-      }));
-      const mockCredential = `eyJhbGciOiJSUzI1NiJ9.${mockPayload}.mock_signature`;
-
-      const userData = await loginWithGoogle(mockCredential);
-      setToast({ type: 'success', message: `¡Sesión iniciada exitosamente como ${userData.nombre_completo}!` });
-    } catch (err) {
-      console.error('Error al iniciar sesión con Google:', err);
-      setToast({ type: 'error', message: 'Error en la conexión con la autenticación de Google.' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    // Cargar script de Google Identity Services (GSI)
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (window.google) {
+    const initGoogle = () => {
+      if (window.google?.accounts?.id) {
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleGoogleResponse,
@@ -71,6 +42,7 @@ export function LoginPage() {
 
         const btnContainer = document.getElementById('google-btn-container');
         if (btnContainer) {
+          btnContainer.innerHTML = '';
           window.google.accounts.id.renderButton(btnContainer, {
             theme: 'filled_blue',
             size: 'large',
@@ -81,13 +53,25 @@ export function LoginPage() {
         }
       }
     };
-    document.body.appendChild(script);
 
-    return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
+    if (window.google?.accounts?.id) {
+      initGoogle();
+      return;
+    }
+
+    const existingScript = document.getElementById('google-gsi-script');
+    if (!existingScript) {
+      const script = document.createElement('script');
+      script.id = 'google-gsi-script';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.body.appendChild(script);
+    } else {
+      existingScript.addEventListener('load', initGoogle);
+      return () => existingScript.removeEventListener('load', initGoogle);
+    }
   }, []);
 
   return (
@@ -137,32 +121,6 @@ export function LoginPage() {
               </div>
             )}
           </div>
-
-          {/* Acceso Directo Super Admin (jchorestrepo@gmail.com) — solo en desarrollo */}
-          {import.meta.env.DEV && (
-          <div className="pt-4 border-t border-slate-800/80 space-y-3">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
-              Super Admin Global Asignado
-            </span>
-
-            <button
-              type="button"
-              onClick={() => handleDirectGoogleLogin('jchorestrepo@gmail.com', 'JChorestrepo (Super Admin Global)')}
-              className="w-full py-3 px-4 rounded-2xl bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center justify-between transition-all cursor-pointer shadow-lg shadow-purple-500/10 group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-xl bg-purple-500/30 border border-purple-400/40 flex items-center justify-center font-bold text-purple-200">
-                  G
-                </div>
-                <div className="text-left">
-                  <p className="text-white text-xs font-bold group-hover:text-purple-200">JChorestrepo (Super Admin)</p>
-                  <p className="text-[10px] font-mono text-purple-300">jchorestrepo@gmail.com</p>
-                </div>
-              </div>
-              <CheckCircle2 className="w-4 h-4 text-purple-400" />
-            </button>
-          </div>
-          )}
         </GlassCard>
       </div>
     </div>

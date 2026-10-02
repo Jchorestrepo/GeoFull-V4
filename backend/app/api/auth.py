@@ -172,20 +172,6 @@ async def google_login(req: GoogleAuthRequest):
     except Exception as e:
         print(f"Aviso al verificar token con Google API: {e}")
 
-    # Fallback si el token es JWT simulado o parseable localmente (solo en desarrollo: no verifica firma)
-    if not email and settings.is_development:
-        try:
-            import json, base64
-            parts = credential.split(".")
-            if len(parts) == 3:
-                payload_b64 = parts[1] + "=="
-                decoded_bytes = base64.urlsafe_b64decode(payload_b64)
-                payload_json = json.loads(decoded_bytes)
-                email = payload_json.get("email", "").strip().lower()
-                name = payload_json.get("name") or email
-        except Exception:
-            pass
-
     if not email:
         raise HTTPException(status_code=401, detail="Token de Google no válido o no fue posible obtener el correo.")
 

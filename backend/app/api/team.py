@@ -1,9 +1,10 @@
 from typing import List, Optional
 import uuid
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, status, Depends
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from app.core.database import get_db_session
+from app.core.dependencies import get_current_user, get_tenant_id
 
 router = APIRouter(prefix="/team", tags=["Gestión de Equipo / Supervisores"])
 
@@ -26,7 +27,7 @@ class TeamMemberResponse(BaseModel):
 
 
 @router.get("/", response_model=List[TeamMemberResponse])
-async def list_team_members(x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")):
+async def list_team_members(x_tenant_id: str = Depends(get_tenant_id)):
     """Lista integrantes del equipo (supervisores, jefes de zona, operarios) de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("""
@@ -54,7 +55,7 @@ async def list_team_members(x_tenant_id: str = Header("empresa_demo", alias="X-T
 @router.post("/", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
 async def create_team_member(
     req: TeamMemberCreate,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Registra un nuevo integrante en el equipo de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -94,7 +95,7 @@ async def create_team_member(
 async def update_team_member(
     member_id: uuid.UUID,
     req: TeamMemberCreate,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Actualiza la información de un integrante del equipo."""
     async for session in get_db_session(tenant_id=x_tenant_id):
@@ -132,7 +133,7 @@ async def update_team_member(
 @router.delete("/{member_id}")
 async def delete_team_member(
     member_id: uuid.UUID,
-    x_tenant_id: str = Header("empresa_demo", alias="X-Tenant-ID")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Elimina o revoca el acceso a un integrante del equipo."""
     async for session in get_db_session(tenant_id=x_tenant_id):

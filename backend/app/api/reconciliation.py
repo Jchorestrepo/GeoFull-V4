@@ -2,10 +2,11 @@ from typing import List, Optional, Dict, Any
 import uuid
 import json
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Header, Query, status
+from fastapi import APIRouter, HTTPException, Header, Query, status, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
+from app.core.dependencies import get_current_user, get_tenant_id
 
 router = APIRouter(prefix="/reconciliation", tags=["Control & Conciliación Diaria (Etapa 5)"])
 
@@ -120,7 +121,7 @@ async def get_or_create_driver(session, tenant_id: str, driver_name: str) -> Dic
 
 
 @router.post("/process-routes")
-async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Header("empresa_demo")):
+async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """
     Procesa masivamente la planilla de rutas asignadas / entregadas (iMile).
     - Si trae fecha/hora de entrega ('Delivered time') -> estado = 'ENTREGADO'.
@@ -227,7 +228,7 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Header
 
 
 @router.post("/drivers/unify")
-async def unify_drivers(req: DriverUnifyRequest, x_tenant_id: str = Header("empresa_demo")):
+async def unify_drivers(req: DriverUnifyRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """
     Unifica dos o más registros de domiciliarios que compartan la misma cédula real.
     Combina sus alias_nombres y reasigna todas sus entregas históricas al conductor principal.
@@ -312,7 +313,7 @@ async def unify_drivers(req: DriverUnifyRequest, x_tenant_id: str = Header("empr
 
 
 @router.get("/summary")
-async def get_reconciliation_summary(x_tenant_id: str = Header("empresa_demo")):
+async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
     """
     Obtiene el resumen operativo de conciliaciones y entregas por domiciliario.
     """
@@ -387,7 +388,7 @@ class DriverCreateRequest(BaseModel):
 @router.get("/drivers")
 async def list_drivers(
     search: Optional[str] = Query(None),
-    x_tenant_id: str = Header("empresa_demo")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """
     Lista domiciliarios ordenados alfabéticamente con filtro de búsqueda por nombre o cédula.
@@ -452,7 +453,7 @@ async def list_drivers(
 
 
 @router.post("/drivers", status_code=status.HTTP_201_CREATED)
-async def create_driver(req: DriverCreateRequest, x_tenant_id: str = Header("empresa_demo")):
+async def create_driver(req: DriverCreateRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """Crea un nuevo domiciliario/conductor en la plataforma."""
     async for session in get_db_session(x_tenant_id):
         check_sql = text("SELECT id FROM personal_conductores WHERE tenant_id = :tenant_id AND cedula = :cedula LIMIT 1")
@@ -549,7 +550,7 @@ class DriverUpdateRequest(BaseModel):
 async def update_driver(
     driver_id: uuid.UUID,
     req: DriverUpdateRequest,
-    x_tenant_id: str = Header("empresa_demo")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """
     Actualiza la información de un domiciliario.
@@ -724,7 +725,7 @@ async def list_novedades(
     domiciliario_id: Optional[uuid.UUID] = Query(None),
     fecha_inicio: Optional[str] = Query(None),
     fecha_fin: Optional[str] = Query(None),
-    x_tenant_id: str = Header("empresa_demo")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Lista las novedades (Vales, Bonos y Penalidades) registradas."""
     async for session in get_db_session(x_tenant_id):
@@ -771,7 +772,7 @@ async def list_novedades(
 
 
 @router.post("/payroll/novedades", status_code=status.HTTP_201_CREATED)
-async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Header("empresa_demo")):
+async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """Registra un Vale/Anticipo (-), Bono (+) o Penalidad (-) para un trabajador."""
     if req.monto <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
@@ -809,7 +810,7 @@ async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Header("e
 
 
 @router.delete("/payroll/novedades/{novedad_id}")
-async def delete_novedad(novedad_id: uuid.UUID, x_tenant_id: str = Header("empresa_demo")):
+async def delete_novedad(novedad_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina una novedad de nómina."""
     async for session in get_db_session(x_tenant_id):
         sql = text("DELETE FROM novedades_nomina WHERE tenant_id = :tenant_id AND id = :id RETURNING id")
@@ -839,7 +840,7 @@ async def get_payroll_summary(
     fecha_fin: str = Query(...),
     domiciliario_id: Optional[uuid.UUID] = Query(None),
     include_zero: bool = Query(False),
-    x_tenant_id: str = Header("empresa_demo")
+    x_tenant_id: str = Depends(get_tenant_id)
 ):
     """
     Calcula la pre-liquidación consolidada de la nómina para el rango de fechas.
@@ -1027,7 +1028,7 @@ async def get_payroll_summary(
 
 
 @router.post("/payroll/pay")
-async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Header("empresa_demo")):
+async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """
     Marca las nóminas de los domiciliarios seleccionados como PAGADA (individual o masivo).
     Soporta monto personalizado de descuento de vales/anticipos (abono parcial / diferido).
@@ -1265,7 +1266,7 @@ class PeriodoNominaCreate(BaseModel):
 
 
 @router.get("/payroll/periods")
-async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
+async def get_payroll_periods(x_tenant_id: str = Depends(get_tenant_id)):
     """
     Devuelve la lista de períodos de nómina guardados y el período activo/sugerido.
     Si no hay un período 'ABIERTO', sugiere automáticamente el rango que inicia al día siguiente del último pago hasta la fecha actual.
@@ -1339,7 +1340,7 @@ async def get_payroll_periods(x_tenant_id: str = Header("empresa_demo")):
 
 
 @router.post("/payroll/periods")
-async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Header("empresa_demo")):
+async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Depends(get_tenant_id)):
     """
     Fija o crea un nuevo período de nómina activo para la empresa.
     """
@@ -1386,7 +1387,7 @@ async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Hea
 
 
 @router.get("/dashboard-stats")
-async def get_dashboard_executive_stats(x_tenant_id: str = Header("empresa_demo")):
+async def get_dashboard_executive_stats(x_tenant_id: str = Depends(get_tenant_id)):
     """
     Endpoint Ejecutivo: Retorna un paquete completo y segmentado de KPIs operativos,
     calidad catastral, rendimiento de flota y métricas financieras para Gerencia.
