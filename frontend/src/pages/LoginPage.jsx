@@ -138,7 +138,8 @@ export function LoginPage() {
             )}
           </div>
 
-          {/* Acceso Directo Super Admin (jchorestrepo@gmail.com) */}
+          {/* Acceso Directo Super Admin (jchorestrepo@gmail.com) — solo en desarrollo */}
+          {import.meta.env.DEV && (
           <div className="pt-4 border-t border-slate-800/80 space-y-3">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
               Super Admin Global Asignado
@@ -161,6 +162,7 @@ export function LoginPage() {
               <CheckCircle2 className="w-4 h-4 text-purple-400" />
             </button>
           </div>
+          )}
         </GlassCard>
       </div>
     </div>

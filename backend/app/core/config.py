@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     SUPER_ADMIN_EMAILS: str = os.getenv("SUPER_ADMIN_EMAILS", "jchorestrepo@gmail.com,jchorestrepo611@gmail.com,mateoyaleja88@gmail.com,admin@geofull.app")
     PUBLIC_DOMAIN: str = os.getenv("PUBLIC_DOMAIN", "sur.geofull.space")
 
+    # Entorno de ejecución: "development" habilita atajos de prueba (p. ej. tokens Google simulados)
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
+
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() == "development"
+
     @property
     def super_admin_emails_list(self) -> list:
         # Permite configurar múltiples correos separados por comas

@@ -172,8 +172,8 @@ async def google_login(req: GoogleAuthRequest):
     except Exception as e:
         print(f"Aviso al verificar token con Google API: {e}")
 
-    # Fallback si el token es JWT simulado o parseable localmente
-    if not email:
+    # Fallback si el token es JWT simulado o parseable localmente (solo en desarrollo: no verifica firma)
+    if not email and settings.is_development:
         try:
             import json, base64
             parts = credential.split(".")

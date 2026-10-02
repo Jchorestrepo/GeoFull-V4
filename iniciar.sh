@@ -126,7 +126,7 @@ trap cleanup SIGINT SIGTERM EXIT
 cd "$SCRIPT_DIR/backend"
 source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate 2>/dev/null
 if [ -f "app/main.py" ]; then
-    uvicorn app.main:app --reload --port 8000 &
+    ENVIRONMENT=development uvicorn app.main:app --reload --port 8000 &
 fi
 
 cd "$SCRIPT_DIR/frontend"
