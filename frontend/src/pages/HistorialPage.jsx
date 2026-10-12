@@ -473,8 +473,8 @@ export function HistorialPage() {
                   </Badge>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
+                <div className="overflow-x-auto rt-wrap">
+                  <table className="w-full text-left text-xs border-collapse rt">
                     <thead>
                       <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                         <th className="py-3 px-4 w-12 text-center">N.°</th>
@@ -503,17 +503,17 @@ export function HistorialPage() {
                               }`}
                             >
                               {/* N.° */}
-                              <td className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
+                              <td data-label="N.°" className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
                                 {num}
                               </td>
 
                               {/* Hora de Escaneo */}
-                              <td className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                              <td data-label="Fecha y Hora" className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
                                 {formatDateTime(ev.fecha)}
                               </td>
 
                               {/* Tipo de Escaneo */}
-                              <td className="py-3 px-4 whitespace-nowrap">
+                              <td data-label="Tipo" className="py-3 px-4 whitespace-nowrap">
                                 <span className="inline-flex items-center gap-1 font-semibold text-slate-200">
                                   {ev.tipo_evento === 'ENTREGADO' && (
                                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -543,14 +543,14 @@ export function HistorialPage() {
                               </td>
 
                               {/* Operador de Escáner / Usuario */}
-                              <td className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
+                              <td data-label="Operador" className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
                                 <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-white/5 font-medium text-slate-200">
                                   {ev.usuario_nombre || 'Sistema'}
                                 </span>
                               </td>
 
                               {/* Descripción Enriquecida Estilo JMS */}
-                              <td className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
+                              <td data-label="Descripción" className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
                                 {renderDescripcionJMS(ev.descripcion)}
                               </td>
                             </tr>

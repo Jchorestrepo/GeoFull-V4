@@ -545,7 +545,7 @@ export function NominaPersonalView() {
       </div>
 
       {/* KPI Cards (Metrics) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <GlassCard className="p-4 border-l-4 border-l-emerald-500 flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
             <PackageCheck className="w-6 h-6" />
@@ -604,26 +604,26 @@ export function NominaPersonalView() {
             fetchDriversList();
             setShowNovedadModal(true);
           }}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all touch-target"
         >
           <Plus className="w-4 h-4 text-emerald-400" />
           <span>Registrar Vale, Bono o Penalidad</span>
         </button>
 
         {selectedIds.length > 0 && (
-          <div className="flex items-center gap-3 bg-blue-950/80 px-4 py-1.5 rounded-xl border border-blue-500/40 animate-fadeIn">
+          <div className="flex flex-wrap items-center gap-3 bg-blue-950/80 px-4 py-2 rounded-xl border border-blue-500/40 animate-fadeIn w-full sm:w-auto justify-between sm:justify-start">
             <span className="text-xs text-blue-300 font-bold">
-              {selectedIds.length} domiciliarios seleccionados
+              {selectedIds.length} seleccionados
             </span>
             <button
               onClick={() => {
                 setPayTargetDriver(null);
                 setShowPayModal(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all touch-target"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Marcar Seleccionados como PAGADOS</span>
+              <span>Marcar como PAGADOS</span>
             </button>
           </div>
         )}
@@ -631,8 +631,8 @@ export function NominaPersonalView() {
 
       {/* Payroll Table */}
       <GlassCard className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto rt-wrap">
+          <table className="w-full text-left border-collapse rt">
             <thead>
               <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/60">
                 <th className="p-3.5 w-10 text-center">
@@ -681,7 +681,7 @@ export function NominaPersonalView() {
                         isSelected ? 'bg-blue-950/30' : isPaid ? 'bg-slate-950/40 opacity-75' : ''
                       }`}
                     >
-                    <td className="p-3.5 text-center">
+                    <td data-label="Seleccionar" className="p-3.5 text-center">
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(item.domiciliario_id)}
@@ -690,7 +690,7 @@ export function NominaPersonalView() {
                       />
                     </td>
 
-                    <td className="p-3.5">
+                    <td data-label="Domiciliario" className="p-3.5">
                       <div className="font-bold text-white text-sm">
                         {item.nombre_completo}
                       </div>
@@ -700,17 +700,17 @@ export function NominaPersonalView() {
                       </div>
                     </td>
 
-                    <td className="p-3.5">
+                    <td data-label="Esquema" className="p-3.5">
                       <Badge variant={item.tipo_remuneracion === 'SALARIO_FIJO' ? 'purple' : item.tipo_remuneracion === 'MIXTO' ? 'blue' : 'amber'}>
                         {item.tipo_remuneracion}
                       </Badge>
                     </td>
 
-                    <td className="p-3.5 text-center font-mono font-bold text-emerald-400 text-sm">
+                    <td data-label="Entregadas" className="p-3.5 text-center font-mono font-bold text-emerald-400 text-sm">
                       {item.total_entregados} guías
                     </td>
 
-                    <td className="p-4 text-right font-mono text-slate-300">
+                    <td data-label="Tarifa/Fijo" className="p-4 text-right font-mono text-slate-300">
                       {item.tipo_remuneracion === 'SALARIO_FIJO' ? (
                         <span className="text-purple-300">${Number(item.salario_fijo_aplicado).toLocaleString('es-CO')} (Fijo)</span>
                       ) : item.tipo_remuneracion === 'MIXTO' ? (
@@ -723,7 +723,7 @@ export function NominaPersonalView() {
                       )}
                     </td>
 
-                    <td className="p-4 text-right font-mono">
+                    <td data-label="Ajustes" className="p-4 text-right font-mono">
                       {item.descuentos > 0 || item.bonos > 0 ? (
                         <div>
                           {item.bonos > 0 && <span className="text-emerald-400 block">+${Number(item.bonos).toLocaleString('es-CO')} (Bono)</span>}
@@ -735,25 +735,25 @@ export function NominaPersonalView() {
                       )}
                     </td>
 
-                    <td className="p-4 text-right font-mono font-black text-white text-base">
+                    <td data-label="Total" className="p-4 text-right font-mono font-black text-white text-base">
                       ${Number(item.monto_neto).toLocaleString('es-CO')}
                     </td>
 
-                    <td className="p-3.5 text-center">
+                    <td data-label="Estado" className="p-3.5 text-center">
                       <Badge variant={item.estado_pago === 'PAGADO' ? 'emerald' : 'amber'}>
                         {item.estado_pago === 'PAGADO' ? 'PAGADO' : 'PENDIENTE'}
                       </Badge>
                     </td>
 
-                    <td className="p-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td data-label="Acción" className="p-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         <button
                           onClick={() => {
                             setReceiptItem(item);
                             setShowReceiptModal(true);
                           }}
                           title="Ver Recibo / Enviar por WhatsApp"
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-[11px] font-semibold transition-all"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-[11px] font-semibold transition-all touch-target"
                         >
                           <FileText className="w-3.5 h-3.5" />
                           <span>Recibo</span>
@@ -762,9 +762,9 @@ export function NominaPersonalView() {
                         <button
                           onClick={() => handleOpenWhatsApp(item)}
                           title="Enviar resumen directo por WhatsApp"
-                          className="p-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 transition-all"
+                          className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 transition-all touch-target"
                         >
-                          <Share2 className="w-3.5 h-3.5" />
+                          <Share2 className="w-4 h-4" />
                         </button>
 
                         {item.estado_pago !== 'PAGADO' && (
@@ -773,7 +773,7 @@ export function NominaPersonalView() {
                               setPayTargetDriver(item.domiciliario_id);
                               setShowPayModal(true);
                             }}
-                            className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-md shadow-emerald-500/20"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-md shadow-emerald-500/20 touch-target"
                           >
                             Pagar
                           </button>
@@ -791,8 +791,8 @@ export function NominaPersonalView() {
 
       {/* MODAL RECIBO DE NÓMINA / COMPROBANTE & WHATSAPP */}
       {showReceiptModal && receiptItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white space-y-5">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white space-y-5">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <FileText className="w-6 h-6 text-emerald-400" />
@@ -801,7 +801,7 @@ export function NominaPersonalView() {
                   <p className="text-[11px] text-slate-400 font-mono">GeoFull V4 — Control Logístico</p>
                 </div>
               </div>
-              <button onClick={() => setShowReceiptModal(false)} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => setShowReceiptModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -872,7 +872,7 @@ export function NominaPersonalView() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
               <button
                 onClick={() => handleOpenWhatsApp(receiptItem)}
-                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                className="py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 touch-target"
               >
                 <Share2 className="w-4 h-4" />
                 <span>Enviar por WhatsApp</span>
@@ -880,7 +880,7 @@ export function NominaPersonalView() {
 
               <button
                 onClick={() => handleCopyReceiptText(receiptItem)}
-                className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-all flex items-center justify-center gap-2"
+                className="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-all flex items-center justify-center gap-2 touch-target"
               >
                 <Copy className="w-4 h-4 text-blue-400" />
                 <span>Copiar Texto</span>
@@ -892,15 +892,15 @@ export function NominaPersonalView() {
 
       {/* MODAL FIJAR PERÍODO DE NÓMINA / CORTE */}
       {showPeriodModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <BookmarkPlus className="w-5 h-5 text-purple-400" />
                 Fijar Período de Nómina (Corte Persistente)
               </h3>
-              <button onClick={() => setShowPeriodModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowPeriodModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -917,11 +917,11 @@ export function NominaPersonalView() {
                   value={periodForm.nombre_periodo}
                   onChange={(e) => setPeriodForm({ ...periodForm, nombre_periodo: e.target.value })}
                   placeholder="Ej: 1 al 15 de Agosto 2026"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-semibold outline-none focus:border-purple-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-semibold outline-none focus:border-purple-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Fecha Inicio (*):</label>
                   <input
@@ -929,7 +929,7 @@ export function NominaPersonalView() {
                     required
                     value={periodForm.fecha_inicio}
                     onChange={(e) => handlePeriodDateChange('fecha_inicio', e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
                   />
                 </div>
 
@@ -940,7 +940,7 @@ export function NominaPersonalView() {
                     required
                     value={periodForm.fecha_fin}
                     onChange={(e) => handlePeriodDateChange('fecha_fin', e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
                   />
                 </div>
               </div>
@@ -948,7 +948,7 @@ export function NominaPersonalView() {
               <button
                 type="submit"
                 disabled={savingPeriod}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-500/20"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-purple-500/20 touch-target"
               >
                 <span>{savingPeriod ? 'Guardando Corte...' : 'Fijar Corte como Activo'}</span>
               </button>
@@ -959,15 +959,15 @@ export function NominaPersonalView() {
 
       {/* MODAL REGISTRAR NOVEDAD */}
       {showNovedadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />
                 Registrar Vale, Bono o Penalidad
               </h3>
-              <button onClick={() => setShowNovedadModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowNovedadModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -977,7 +977,7 @@ export function NominaPersonalView() {
                 <select
                   value={novedadForm.domiciliario_id}
                   onChange={(e) => setNovedadForm({ ...novedadForm, domiciliario_id: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                 >
                   {driversList.map(d => (
                     <option key={d.id} value={d.id}>
@@ -987,13 +987,13 @@ export function NominaPersonalView() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tipo de Novedad (*):</label>
                   <select
                     value={novedadForm.tipo_novedad}
                     onChange={(e) => setNovedadForm({ ...novedadForm, tipo_novedad: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                   >
                     <option value="VALE">VALE / ADELANTO (-)</option>
                     <option value="BONO">BONIFICACIÓN (+)</option>
@@ -1009,7 +1009,7 @@ export function NominaPersonalView() {
                     value={novedadForm.monto}
                     onChange={(e) => setNovedadForm({ ...novedadForm, monto: e.target.value })}
                     placeholder="Ej: 50000"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1020,7 +1020,7 @@ export function NominaPersonalView() {
                   type="date"
                   value={novedadForm.fecha_novedad}
                   onChange={(e) => setNovedadForm({ ...novedadForm, fecha_novedad: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
                 />
               </div>
 
@@ -1031,14 +1031,14 @@ export function NominaPersonalView() {
                   value={novedadForm.motivo}
                   onChange={(e) => setNovedadForm({ ...novedadForm, motivo: e.target.value })}
                   placeholder="Ej: Adelanto de gasolina"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-emerald-500"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={creatingNov}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 touch-target"
               >
                 <span>{creatingNov ? 'Guardando...' : 'Guardar Novedad'}</span>
               </button>
@@ -1049,15 +1049,15 @@ export function NominaPersonalView() {
 
       {/* MODAL REGISTRAR PAGO */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
                 Confirmar Registro de Pago
               </h3>
-              <button onClick={() => setShowPayModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowPayModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1103,7 +1103,7 @@ export function NominaPersonalView() {
                             <span className="text-[11px] font-mono text-slate-400">Total Vales: ${valesTotales.toLocaleString('es-CO')}</span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 items-center">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
                             <div>
                               <label className="block text-[10px] text-slate-400 font-medium mb-1">Descontar hoy ($):</label>
                               <input
@@ -1119,7 +1119,7 @@ export function NominaPersonalView() {
                               />
                             </div>
 
-                            <div className="text-right space-y-0.5">
+                            <div className="text-left sm:text-right space-y-0.5">
                               <div className="text-[10px] text-slate-400">Neto hoy:</div>
                               <div className="text-sm font-black text-emerald-400 font-mono">
                                 ${netoCalculado.toLocaleString('es-CO')}
@@ -1152,7 +1152,7 @@ export function NominaPersonalView() {
                 <select
                   value={metodoPago}
                   onChange={(e) => setMetodoPago(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                 >
                   <option value="TRANSFERENCIA">Transferencia Bancaria</option>
                   <option value="NEQUI">Nequi</option>
@@ -1169,14 +1169,14 @@ export function NominaPersonalView() {
                   value={referenciaPago}
                   onChange={(e) => setReferenciaPago(e.target.value)}
                   placeholder="Ej: REF-12345"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-emerald-500"
                 />
               </div>
 
               <button
                 onClick={handleExecutePayment}
                 disabled={paying}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20 touch-target"
               >
                 <span>{paying ? 'Guardando...' : 'Confirmar Pago Efectuado'}</span>
               </button>

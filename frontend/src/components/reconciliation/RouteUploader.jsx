@@ -254,10 +254,10 @@ export function RouteUploader({ onBatchComplete }) {
 
       {/* MODAL DE ERROR ESTRICTO POR PLANTILLA INCOMPATIBLE */}
       {errorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-          <GlassCard className="w-full max-w-md p-6 rounded-3xl space-y-4 border-red-500/50">
+        <div className="modal-overlay bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <GlassCard className="modal-sheet w-full max-w-md p-5 sm:p-6 rounded-3xl space-y-4 border-red-500/50">
             <div className="flex items-center gap-3 text-red-400 border-b border-slate-800 pb-3">
-              <div className="p-2.5 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30">
+              <div className="p-2.5 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30 shrink-0">
                 <ShieldAlert className="w-6 h-6" />
               </div>
               <div>
@@ -272,7 +272,7 @@ export function RouteUploader({ onBatchComplete }) {
 
             <button
               onClick={() => setErrorModal(null)}
-              className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition-colors cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition-colors cursor-pointer touch-target flex items-center justify-center"
             >
               Entendido, Seleccionar Otro Archivo
             </button>

@@ -21,13 +21,17 @@ export function Toast({ type = 'info', title, message, onClose, duration = 4000 
   const Icon = config.icon;
 
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-2xl apple-glass border ${config.border} ${config.bg} shadow-2xl max-w-md animate-slideIn`}>
+    <div
+      className={`fixed left-3 right-3 md:left-auto md:right-6 md:bottom-6 z-[70] flex items-start gap-3 p-4 rounded-2xl apple-glass border ${config.border} ${config.bg} shadow-2xl md:max-w-md animate-slideIn`}
+      style={{ bottom: 'max(1.5rem, calc(var(--tabbar-h) + var(--safe-bottom) + 0.75rem))' }}
+      role="status"
+    >
       <Icon className={`w-5 h-5 ${config.color} shrink-0 mt-0.5`} />
       <div className="flex-1 pr-2">
         <h4 className="font-bold text-xs text-white tracking-tight">{title}</h4>
         {message && <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">{message}</p>}
       </div>
-      <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg">
+      <button onClick={onClose} className="touch-target -m-2 flex items-center justify-center text-slate-400 hover:text-white p-1 rounded-lg" aria-label="Cerrar notificación">
         <X className="w-4 h-4" />
       </button>
     </div>

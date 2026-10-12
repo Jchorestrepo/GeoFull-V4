@@ -46,7 +46,7 @@ export function LoginPage() {
           window.google.accounts.id.renderButton(btnContainer, {
             theme: 'filled_blue',
             size: 'large',
-            width: '320',
+            width: String(Math.min(320, Math.max(220, (btnContainer.parentElement?.clientWidth || 320) - 8))),
             text: 'continue_with',
             shape: 'pill'
           });
@@ -75,7 +75,7 @@ export function LoginPage() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-white flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="min-h-dvh-safe w-full bg-slate-950 text-white flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Luces de Fondo (Apple Dark Minimalist Glow) */}
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
@@ -90,13 +90,13 @@ export function LoginPage() {
               <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032 s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2 C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.761H12.545z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">GeoFull V4</h1>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">GeoFull V4</h1>
           <p className="text-xs text-slate-400">Autenticación Única Exclusiva con Google OAuth 2.0</p>
         </div>
 
         {/* Tarjeta de Inicio de Sesión Google */}
-        <GlassCard className="p-8 space-y-6 border-purple-500/30 bg-slate-900/70 backdrop-blur-2xl shadow-2xl rounded-3xl text-center">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3 text-left">
+        <GlassCard className="p-5 sm:p-8 space-y-6 border-purple-500/30 bg-slate-900/70 backdrop-blur-2xl shadow-2xl rounded-3xl text-center">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3 text-left">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-purple-400" />
               Acceso Seguro a la Plataforma

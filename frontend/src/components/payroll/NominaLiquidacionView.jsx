@@ -386,7 +386,7 @@ export function NominaLiquidacionView() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <GlassCard className="p-4 border-l-4 border-l-blue-500">
           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Trabajadores</p>
           <div className="text-2xl font-black text-white mt-1">
@@ -464,8 +464,8 @@ export function NominaLiquidacionView() {
 
       {/* Payroll Table */}
       <GlassCard className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto rt-wrap">
+          <table className="w-full text-left border-collapse rt">
             <thead>
               <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/60">
                 <th className="p-3 w-10 text-center">
@@ -516,7 +516,7 @@ export function NominaLiquidacionView() {
                         isSelected ? 'bg-blue-950/30' : isPaid ? 'bg-slate-950/40 opacity-75' : ''
                       }`}
                     >
-                      <td className="p-3 text-center">
+                      <td data-label="Seleccionar" className="p-3 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -525,7 +525,7 @@ export function NominaLiquidacionView() {
                         />
                       </td>
 
-                      <td className="p-3">
+                      <td data-label="Trabajador" className="p-3">
                         <div className="font-bold text-white flex items-center gap-1.5">
                           <span>{row.nombre_completo}</span>
                         </div>
@@ -534,7 +534,7 @@ export function NominaLiquidacionView() {
                         </div>
                       </td>
 
-                      <td className="p-3">
+                      <td data-label="Esquema" className="p-3">
                         <div className="flex items-center gap-1">
                           <Badge variant={row.tipo_remuneracion === 'SALARIO_FIJO' ? 'purple' : row.tipo_remuneracion === 'MIXTO' ? 'blue' : 'amber'}>
                             {row.tipo_remuneracion}
@@ -545,12 +545,12 @@ export function NominaLiquidacionView() {
                         </div>
                       </td>
 
-                      <td className="p-3 text-center font-mono font-bold text-emerald-400">
+                      <td data-label="Entregas" className="p-3 text-center font-mono font-bold text-emerald-400">
                         {row.total_entregados} paq.
                       </td>
 
                       {file2Results && (
-                        <td className="p-3 text-center font-mono">
+                        <td data-label="Archivo 2" className="p-3 text-center font-mono">
                           {audit ? (
                             audit.estado_cruce === 'COINCIDE' ? (
                               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
@@ -567,27 +567,27 @@ export function NominaLiquidacionView() {
                         </td>
                       )}
 
-                      <td className="p-3 text-right font-mono text-slate-300">
+                      <td data-label="Subtotal" className="p-3 text-right font-mono text-slate-300">
                         ${Number(row.monto_paquetes + row.salario_fijo_aplicado).toLocaleString('es-CO')}
                       </td>
 
-                      <td className="p-3 text-right font-mono text-emerald-400">
+                      <td data-label="Bonos" className="p-3 text-right font-mono text-emerald-400">
                         {row.bonos > 0 ? `+$${Number(row.bonos).toLocaleString('es-CO')}` : '-'}
                       </td>
 
-                      <td className="p-3 text-right font-mono text-red-400">
+                      <td data-label="Penalidades" className="p-3 text-right font-mono text-red-400">
                         {row.penalidades > 0 ? `-$${Number(row.penalidades).toLocaleString('es-CO')}` : '-'}
                       </td>
 
-                      <td className="p-3 text-right font-mono text-amber-400">
+                      <td data-label="Vales" className="p-3 text-right font-mono text-amber-400">
                         {row.vales_descontados > 0 ? `-$${Number(row.vales_descontados).toLocaleString('es-CO')}` : '-'}
                       </td>
 
-                      <td className="p-3 text-right font-mono font-black text-purple-300 text-sm">
+                      <td data-label="Neto" className="p-3 text-right font-mono font-black text-purple-300 text-sm">
                         ${Number(row.monto_neto).toLocaleString('es-CO')}
                       </td>
 
-                      <td className="p-3 text-center">
+                      <td data-label="Estado" className="p-3 text-center">
                         {row.estado_pago === 'PAGADO' ? (
                           <div className="flex flex-col items-center">
                             <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] flex items-center gap-1">
@@ -608,14 +608,14 @@ export function NominaLiquidacionView() {
                         )}
                       </td>
 
-                      <td className="p-3 text-right">
+                      <td data-label="Acción" className="p-3 text-right">
                         {row.estado_pago !== 'PAGADO' && (
                           <button
                             onClick={() => {
                               setPayTargetDriver(row.domiciliario_id);
                               setShowPayModal(true);
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all shadow"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all shadow touch-target"
                           >
                             Pagar
                           </button>
@@ -632,15 +632,15 @@ export function NominaLiquidacionView() {
 
       {/* MODAL REGISTRAR NOVEDAD */}
       {showNovedadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />
                 Registrar Novedad de Nómina
               </h3>
-              <button onClick={() => setShowNovedadModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowNovedadModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -650,7 +650,7 @@ export function NominaLiquidacionView() {
                 <select
                   value={novedadForm.domiciliario_id}
                   onChange={(e) => setNovedadForm({ ...novedadForm, domiciliario_id: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                 >
                   {driversList.map(d => (
                     <option key={d.id} value={d.id}>
@@ -660,13 +660,13 @@ export function NominaLiquidacionView() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tipo Novedad (*):</label>
                   <select
                     value={novedadForm.tipo_novedad}
                     onChange={(e) => setNovedadForm({ ...novedadForm, tipo_novedad: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                   >
                     <option value="VALE">VALE / ADELANTO (-)</option>
                     <option value="BONO">BONO / BONIFICACIÓN (+)</option>
@@ -682,7 +682,7 @@ export function NominaLiquidacionView() {
                     value={novedadForm.monto}
                     onChange={(e) => setNovedadForm({ ...novedadForm, monto: e.target.value })}
                     placeholder="Ej: 50000"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-emerald-500"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -693,7 +693,7 @@ export function NominaLiquidacionView() {
                   type="date"
                   value={novedadForm.fecha_novedad}
                   onChange={(e) => setNovedadForm({ ...novedadForm, fecha_novedad: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono"
                 />
               </div>
 
@@ -704,14 +704,14 @@ export function NominaLiquidacionView() {
                   value={novedadForm.motivo}
                   onChange={(e) => setNovedadForm({ ...novedadForm, motivo: e.target.value })}
                   placeholder="Ej: Adelanto para gasolina / Bono puntualidad"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-emerald-500"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={creatingNov}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 touch-target"
               >
                 <span>{creatingNov ? 'Guardando...' : 'Guardar Novedad'}</span>
               </button>
@@ -722,15 +722,15 @@ export function NominaLiquidacionView() {
 
       {/* MODAL AUDITORÍA ARCHIVO 2 */}
       {showFile2Modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-purple-400" />
                 Auditoría con Archivo 2 (Cliente / Transportadora)
               </h3>
-              <button onClick={() => setShowFile2Modal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowFile2Modal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -751,7 +751,7 @@ export function NominaLiquidacionView() {
             <button
               onClick={handleProcessFile2}
               disabled={reconcilingFile2}
-              className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 touch-target"
             >
               <span>{reconcilingFile2 ? 'Auditando...' : 'Ejecutar Cruce de Archivo 2'}</span>
             </button>
@@ -761,15 +761,15 @@ export function NominaLiquidacionView() {
 
       {/* MODAL MARCAR COMO PAGADO */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <CreditCard className="w-5 h-5 text-emerald-400" />
                 Registrar Pago de Nómina
               </h3>
-              <button onClick={() => setShowPayModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowPayModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -815,7 +815,7 @@ export function NominaLiquidacionView() {
                             <span className="text-[11px] font-mono text-slate-400">Total Vales: ${valesTotales.toLocaleString('es-CO')}</span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 items-center">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
                             <div>
                               <label className="block text-[10px] text-slate-400 font-medium mb-1">Descontar hoy ($):</label>
                               <input
@@ -831,7 +831,7 @@ export function NominaLiquidacionView() {
                               />
                             </div>
 
-                            <div className="text-right space-y-0.5">
+                            <div className="text-left sm:text-right space-y-0.5">
                               <div className="text-[10px] text-slate-400">Neto hoy:</div>
                               <div className="text-sm font-black text-emerald-400 font-mono">
                                 ${netoCalculado.toLocaleString('es-CO')}
@@ -864,7 +864,7 @@ export function NominaLiquidacionView() {
                 <select
                   value={metodoPago}
                   onChange={(e) => setMetodoPago(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                 >
                   <option value="TRANSFERENCIA">Transferencia Bancaria</option>
                   <option value="NEQUI">Nequi</option>
@@ -881,14 +881,14 @@ export function NominaLiquidacionView() {
                   value={referenciaPago}
                   onChange={(e) => setReferenciaPago(e.target.value)}
                   placeholder="Ej: REF-987654"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-emerald-500"
                 />
               </div>
 
               <button
                 onClick={handleExecutePayment}
                 disabled={paying}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-500/20 touch-target"
               >
                 <span>{paying ? 'Procesando...' : 'Confirmar y Marcar como PAGADO'}</span>
               </button>

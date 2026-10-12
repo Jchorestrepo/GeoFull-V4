@@ -102,7 +102,7 @@ export function SystemMaintenance() {
           <button
             onClick={() => handleSinglePurge('pedidos', 'purge-orders', 'los pedidos')}
             disabled={actionLoading === 'pedidos'}
-            className="w-full py-2 px-3 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-2.5 px-3 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 touch-target"
           >
             {actionLoading === 'pedidos' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
             Vaciar Pedidos
@@ -123,7 +123,7 @@ export function SystemMaintenance() {
           <button
             onClick={() => handleSinglePurge('zonas', 'purge-zones', 'las zonas GeoJSON')}
             disabled={actionLoading === 'zonas'}
-            className="w-full py-2 px-3 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-2.5 px-3 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 touch-target"
           >
             {actionLoading === 'zonas' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
             Vaciar Zonas GeoJSON
@@ -144,7 +144,7 @@ export function SystemMaintenance() {
           <button
             onClick={() => handleSinglePurge('conductores', 'purge-drivers', 'la lista de conductores')}
             disabled={actionLoading === 'conductores'}
-            className="w-full py-2 px-3 bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-2.5 px-3 bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/40 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 touch-target"
           >
             {actionLoading === 'conductores' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
             Vaciar Conductores
@@ -203,7 +203,7 @@ export function SystemMaintenance() {
           <button
             type="submit"
             disabled={confirmText.trim().toUpperCase() !== 'ELIMINAR TODO' || clearing}
-            className={`px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg ${
+            className={`w-full sm:w-auto px-5 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg touch-target ${
               confirmText.trim().toUpperCase() === 'ELIMINAR TODO' && !clearing
                 ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer shadow-red-500/30'
                 : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'

@@ -26,8 +26,8 @@ export function MapaBodegaPage() {
       </div>
 
       {/* Main Map Card */}
-      <GlassCard className="p-4 rounded-3xl border border-white/10 space-y-3">
-        <BodegaMap height="calc(100vh - 14rem)" />
+      <GlassCard className="p-3 sm:p-4 rounded-3xl border border-white/10 space-y-3">
+        <BodegaMap height="calc(100dvh - 15rem)" />
       </GlassCard>
     </div>
   );

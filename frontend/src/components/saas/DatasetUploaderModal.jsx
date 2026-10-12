@@ -44,17 +44,17 @@ export function DatasetUploaderModal({ isOpen, onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-      <GlassCard className="w-full max-w-lg p-6 rounded-3xl space-y-4 border-purple-500/30 relative">
+    <div className="modal-overlay bg-slate-950/80 backdrop-blur-md animate-fade-in">
+      <GlassCard className="modal-sheet w-full max-w-lg p-5 sm:p-6 rounded-3xl space-y-4 border-purple-500/30 relative">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          className="touch-target absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-          <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+        <div className="flex items-center gap-3 border-b border-slate-800 pb-3 pr-8">
+          <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
             <Map className="w-6 h-6" />
           </div>
           <div>
@@ -71,7 +71,7 @@ export function DatasetUploaderModal({ isOpen, onClose, onSuccess }) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-semibold text-slate-300 mb-1">Ciudad *</label>
               <input

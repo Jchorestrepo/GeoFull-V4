@@ -139,21 +139,21 @@ export function DashboardPage() {
   return (
     <div className="space-y-6 pb-8">
       {/* HEADER PRINCIPAL */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-              <LayoutDashboard className="w-7 h-7 text-blue-500" />
-              Dashboard Ejecutivo & Centro de Control
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
+              <LayoutDashboard className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500 shrink-0" />
+              Dashboard Ejecutivo
             </h2>
-            <Badge variant="titanium">GeoFull V4 SaaS</Badge>
+            <Badge variant="titanium">GeoFull V4</Badge>
           </div>
           <p className="text-xs text-slate-400 mt-1">
             Mapeo estratégico en tiempo real de SLA, precisión catastral, inventario y mapa cartográfico.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-white/10 text-xs text-slate-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
             <span className="text-slate-300 font-medium">{activeTenantId || 'empresa_demo'}</span>
@@ -162,14 +162,14 @@ export function DashboardPage() {
           <button
             onClick={() => fetchDashboardStats(true)}
             disabled={refreshing}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all backdrop-blur-md active:scale-95 disabled:opacity-50 ${
+            className={`w-full sm:w-auto touch-target flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all backdrop-blur-md active:scale-95 disabled:opacity-50 ${
               isStale
                 ? 'bg-amber-500/30 text-amber-300 border-2 border-amber-400 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)] ring-2 ring-amber-400/50'
                 : 'bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400'
             }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : isStale ? 'animate-spin text-amber-300' : ''}`} />
-            {refreshing ? 'Actualizando...' : isStale ? '⚠️ Cambios detectados — Refrescar' : 'Refrescar Métricas'}
+            <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${refreshing ? 'animate-spin' : isStale ? 'animate-spin text-amber-300' : ''}`} />
+            <span>{refreshing ? 'Actualizando...' : isStale ? '⚠️ Cambios detectados — Refrescar' : 'Refrescar Métricas'}</span>
           </button>
         </div>
       </div>
@@ -556,13 +556,13 @@ export function DashboardPage() {
             </button>
           </div>
 
-          <div className="overflow-x-auto pt-1">
+          <div className="rt-wrap overflow-x-auto pt-1">
             {flota.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-500">
                 No hay entregas registradas por domiciliarios en este período.
               </div>
             ) : (
-              <table className="w-full text-left text-xs">
+              <table className="rt w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-white/10 text-slate-400 font-semibold">
                     <th className="py-2.5 px-3">Conductor</th>
@@ -576,19 +576,19 @@ export function DashboardPage() {
                 <tbody className="divide-y divide-white/5">
                   {flota.map((d, i) => (
                     <tr key={d.id || i} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 px-3 font-semibold text-white flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] flex items-center justify-center font-bold">
+                      <td className="rt-title py-3 px-3 font-semibold text-white flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] flex items-center justify-center font-bold shrink-0">
                           {i + 1}
                         </span>
-                        {d.nombre}
+                        <span>{d.nombre}</span>
                       </td>
-                      <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">{d.cedula}</td>
-                      <td className="py-3 px-3 text-center">
+                      <td data-label="Cédula" className="py-3 px-3 sm:text-center text-slate-400 font-mono text-[11px]">{d.cedula}</td>
+                      <td data-label="Entregados" className="py-3 px-3 sm:text-center">
                         <Badge variant="emerald">{d.entregados}</Badge>
                       </td>
-                      <td className="py-3 px-3 text-center text-slate-300">{d.en_ruta}</td>
-                      <td className="py-3 px-3 text-right text-slate-400">{fmtCOP(d.tarifa)}</td>
-                      <td className="py-3 px-3 text-right font-bold text-emerald-400">{fmtCOP(d.subtotal_ganado)}</td>
+                      <td data-label="En Ruta" className="py-3 px-3 sm:text-center text-slate-300">{d.en_ruta}</td>
+                      <td data-label="Tarifa" className="py-3 px-3 text-right text-slate-400">{fmtCOP(d.tarifa)}</td>
+                      <td data-label="Subtotal" className="py-3 px-3 text-right font-bold text-emerald-400">{fmtCOP(d.subtotal_ganado)}</td>
                     </tr>
                   ))}
                 </tbody>

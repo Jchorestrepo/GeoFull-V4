@@ -166,8 +166,8 @@ export function SectorizacionPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-emerald-400" />
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
+            <MapPin className="w-6 h-6 text-emerald-400 shrink-0" />
             Etapa 1 — Sectorización & Importación Masiva
           </h2>
           <p className="text-xs text-slate-400 mt-1">
@@ -176,10 +176,10 @@ export function SectorizacionPage() {
         </div>
 
         {/* Action Header Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full md:w-auto">
           <button
             onClick={() => fetchOrdersAndZones(true)}
-            className={`p-2.5 rounded-2xl transition-all border ${
+            className={`touch-target p-2.5 rounded-2xl transition-all border flex items-center justify-center shrink-0 ${
               isStale
                 ? 'bg-amber-500/30 text-amber-300 border-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)] ring-2 ring-amber-400/50'
                 : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700'
@@ -191,50 +191,50 @@ export function SectorizacionPage() {
 
           <button
             onClick={() => setShowUploadModal(true)}
-            className="flex items-center gap-2 py-2.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-lg shadow-blue-500/20"
+            className="flex-1 md:flex-initial touch-target flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-lg shadow-blue-500/20"
           >
-            <Upload className="w-4 h-4" />
-            Importar Pedidos / Zonas
+            <Upload className="w-4 h-4 shrink-0" />
+            <span>Importar Pedidos / Zonas</span>
           </button>
         </div>
       </div>
 
       {/* Grid: Active Zones Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
+        <GlassCard className="p-4 sm:p-5 rounded-3xl border border-white/10 flex items-center gap-3 sm:gap-4">
+          <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
             <Layers className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-slate-400">Zonas GeoJSON Activas</p>
-            <h3 className="text-2xl font-extrabold text-white">{zones.length} Zonas</h3>
-            <p className="text-[11px] text-emerald-400 mt-0.5">Evaluadas en simultáneo en PostGIS</p>
+            <h3 className="text-xl sm:text-2xl font-extrabold text-white">{zones.length} Zonas</h3>
+            <p className="text-[11px] text-emerald-400 mt-0.5 truncate">Evaluadas en PostGIS</p>
           </div>
         </GlassCard>
 
-        <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        <GlassCard className="p-4 sm:p-5 rounded-3xl border border-white/10 flex items-center gap-3 sm:gap-4">
+          <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
             <ShieldCheck className="w-6 h-6" />
           </div>
-          <div>
-            <p className="text-xs text-slate-400">Pedidos Sectorizados (Bodega)</p>
-            <h3 className="text-2xl font-extrabold text-white">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400">Pedidos Sectorizados</p>
+            <h3 className="text-xl sm:text-2xl font-extrabold text-white">
               {sectorizedCount} / {orders.length}
             </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Asignación automática</p>
+            <p className="text-[11px] text-slate-400 mt-0.5 truncate">Asignación automática</p>
           </div>
         </GlassCard>
 
-        <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30">
+        <GlassCard className="p-4 sm:p-5 rounded-3xl border border-white/10 flex items-center gap-3 sm:gap-4">
+          <div className="p-3 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30 shrink-0">
             <AlertTriangle className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs text-slate-400">Fuera de Zona</p>
-            <h3 className="text-2xl font-extrabold text-white">
+            <h3 className="text-xl sm:text-2xl font-extrabold text-white">
               {unzonedCount} Pedidos
             </h3>
-            <p className="text-[11px] text-red-400 mt-0.5">Requieren asignación manual</p>
+            <p className="text-[11px] text-red-400 mt-0.5 truncate">Requieren asignación</p>
           </div>
         </GlassCard>
       </div>
@@ -345,8 +345,8 @@ export function SectorizacionPage() {
           </div>
 
           {/* Table Container */}
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse">
+          <div className="rt-wrap overflow-x-auto max-h-[480px] overflow-y-auto custom-scrollbar">
+            <table className="rt w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40 sticky top-0 z-10 backdrop-blur-md">
                   <th className="p-3">Empresa</th>
@@ -368,13 +368,13 @@ export function SectorizacionPage() {
                 ) : (
                   paginatedOrders.map((o) => (
                     <tr key={o.id} className="hover:bg-slate-800/30 transition-all">
-                      <td className="p-3">
+                      <td data-label="Empresa" className="p-3">
                         <Badge variant="purple" className="text-[10px] font-mono uppercase">
                           {o.tenant_id || activeTenantId || 'Empresa'}
                         </Badge>
                       </td>
-                      <td className="p-3 font-mono font-bold text-blue-400">{o.guia}</td>
-                      <td className="p-3">
+                      <td className="rt-title p-3 font-mono font-bold text-blue-400">{o.guia}</td>
+                      <td data-label="Dirección" className="p-3">
                         <div className="font-medium text-slate-200">{o.direccion_limpia || o.direccion_original}</div>
                         {o.observaciones_entrega && (
                           <div className="text-[10px] text-amber-400/90 truncate max-w-[180px]">
@@ -382,19 +382,19 @@ export function SectorizacionPage() {
                           </div>
                         )}
                       </td>
-                      <td className="p-3">
+                      <td data-label="Cliente" className="p-3">
                         <div className="flex items-center gap-1.5 text-slate-300">
                           <User className="w-3 h-3 text-slate-500" />
                           <span>{o.cliente || 'Consumidor Final'}</span>
                         </div>
                       </td>
-                      <td className="p-3">
+                      <td data-label="Teléfono" className="p-3">
                         <div className="flex items-center gap-1.5 text-slate-300 font-mono">
                           <Phone className="w-3 h-3 text-slate-500" />
                           <span>{o.telefono_cliente || 'N/A'}</span>
                         </div>
                       </td>
-                      <td className="p-3">
+                      <td data-label="Zona" className="p-3">
                         <select
                           value={o.zona_id || ''}
                           onChange={(e) => handleAssignZone(o.id, e.target.value)}
@@ -412,7 +412,7 @@ export function SectorizacionPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="p-3 text-right">
+                      <td data-label="Estado" className="p-3 text-right">
                         <Badge variant={o.estado === 'SECTORIZADO' ? 'emerald' : 'red'}>
                           {o.estado}
                         </Badge>
@@ -474,8 +474,8 @@ export function SectorizacionPage() {
 
       {/* DISCREET IMPORT MODAL */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-2xl p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="modal-overlay bg-black/70 backdrop-blur-md animate-fadeIn">
+          <GlassCard className="modal-sheet w-full max-w-2xl p-5 sm:p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white space-y-4 max-h-[92dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
@@ -488,7 +488,8 @@ export function SectorizacionPage() {
               </div>
               <button
                 onClick={() => setShowUploadModal(false)}
-                className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                className="touch-target p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex items-center justify-center"
+                aria-label="Cerrar modal"
               >
                 <X className="w-5 h-5" />
               </button>

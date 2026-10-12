@@ -76,7 +76,7 @@ export function ZoneUploader({ onZonesUploaded }) {
       </div>
 
       <form onSubmit={handleUploadZone} className="space-y-3 text-xs">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Nombre de la Zona (*):</label>
             <input
@@ -102,9 +102,9 @@ export function ZoneUploader({ onZonesUploaded }) {
 
         <div>
           <label className="block text-slate-300 font-semibold mb-1">Archivo GeoJSON (*.geojson, *.json):</label>
-          <label className="p-4 border border-dashed border-slate-700 hover:border-blue-500/60 rounded-2xl flex items-center justify-center gap-3 cursor-pointer bg-slate-900/40">
+          <label className="p-4 border border-dashed border-slate-700 hover:border-blue-500/60 rounded-2xl flex items-center justify-center gap-3 cursor-pointer bg-slate-900/40 touch-target">
             <Upload className="w-5 h-5 text-blue-400" />
-            <span className="text-slate-300 text-xs font-medium">
+            <span className="text-slate-300 text-xs font-medium truncate max-w-[260px]">
               {fileName ? fileName : "Seleccionar archivo GeoJSON..."}
             </span>
             <input
@@ -119,7 +119,7 @@ export function ZoneUploader({ onZonesUploaded }) {
         <button
           type="submit"
           disabled={uploading || !fileContent || !zoneName.trim()}
-          className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50"
+          className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50 touch-target"
         >
           {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           <span>{uploading ? 'Guardando Zona...' : 'Importar Polígono GeoJSON'}</span>

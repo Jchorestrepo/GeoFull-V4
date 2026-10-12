@@ -275,14 +275,14 @@ export function InventarioZonasPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* Header Superior */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-            <ScanBarcode className="w-7 h-7 text-blue-400" />
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl md:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
+            <ScanBarcode className="w-6 h-6 md:w-7 md:h-7 text-blue-400 flex-shrink-0" />
             Inventario de Paquetes por Zonas
           </h2>
           <p className="text-xs text-slate-400 mt-1">
@@ -290,13 +290,13 @@ export function InventarioZonasPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="titanium" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
             Escáner Físico Activo
           </Badge>
           <button
             onClick={fetchSummary}
-            className="p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-300 hover:text-white transition-colors"
+            className="touch-target flex items-center justify-center p-2 rounded-xl bg-slate-900/60 border border-white/10 text-slate-300 hover:text-white transition-colors"
             title="Refrescar resumen"
           >
             <RefreshCw className="w-4 h-4" />
@@ -305,7 +305,7 @@ export function InventarioZonasPage() {
       </div>
 
       {/* Barcode Scanner Main Input Box */}
-      <GlassCard className="p-5 border-blue-500/30 bg-blue-500/5 space-y-3">
+      <GlassCard className="p-4 md:p-5 border-blue-500/30 bg-blue-500/5 space-y-3">
         <form onSubmit={handleScanSubmit} className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
             <ScanBarcode className="w-5 h-5 text-blue-400 absolute left-4 top-1/2 -translate-y-1/2" />
@@ -315,7 +315,7 @@ export function InventarioZonasPage() {
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
               placeholder="Escanea aquí el Código de Barras de la Zona o Paquete..."
-              className="w-full bg-slate-950/90 border-2 border-blue-500/40 focus:border-blue-400 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-mono text-white placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20 shadow-xl transition-all"
+              className="w-full bg-slate-950/90 border-2 border-blue-500/40 focus:border-blue-400 rounded-2xl pl-12 pr-10 py-4 md:py-3.5 text-base md:text-sm font-mono text-white placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20 shadow-xl transition-all"
               autoFocus
             />
             {processingScan && (
@@ -325,23 +325,23 @@ export function InventarioZonasPage() {
           <button
             type="submit"
             disabled={processingScan || !barcodeInput.trim()}
-            className="w-full sm:w-auto px-6 py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/25 cursor-pointer whitespace-nowrap"
+            className="w-full sm:w-auto px-6 py-4 md:py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-sm md:text-xs rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/25 cursor-pointer whitespace-nowrap"
           >
             <CheckCircle2 className="w-4 h-4" />
             Procesar Escaneo
           </button>
         </form>
-        <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-400 px-1">
           <span>💡 Tip: Puedes escanear directamente con la pistola lectora de código de barras.</span>
-          <span className="font-mono text-blue-400">Escáner listo para recibir lectura</span>
+          <span className="hidden sm:inline font-mono text-blue-400">Escáner listo para recibir lectura</span>
         </div>
       </GlassCard>
 
       {/* Grid Principal: Zona Activa & Tarjeta de Último Paquete Escaneado */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Banner de Zona Activa */}
-        <GlassCard className="p-6 lg:col-span-2 border-emerald-500/30 bg-emerald-500/5 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between">
+        <GlassCard className="p-4 md:p-6 lg:col-span-2 border-emerald-500/30 bg-emerald-500/5 flex flex-col justify-between space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
@@ -351,7 +351,7 @@ export function InventarioZonasPage() {
             {activeZone && (
               <button
                 onClick={() => handleResetZone(activeZone)}
-                className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="min-h-[44px] md:min-h-0 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reiniciar Conteo a 0
@@ -361,15 +361,15 @@ export function InventarioZonasPage() {
 
           {activeZone ? (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-2">
-              <div>
-                <h3 className="text-2xl font-black text-white flex items-center gap-3">
+              <div className="min-w-0">
+                <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3 break-words">
                   <span
-                    className="w-4 h-4 rounded-full shadow-lg"
+                    className="w-4 h-4 rounded-full shadow-lg flex-shrink-0"
                     style={{ backgroundColor: activeZone.color || '#10b981' }}
                   />
                   {activeZone.nombre}
                 </h3>
-                <p className="text-xs font-mono text-slate-400 mt-1">
+                <p className="text-xs font-mono text-slate-400 mt-1 break-all">
                   Código de Barras: <span className="text-emerald-300 font-bold">{activeZone.codigo_barras}</span>
                 </p>
               </div>
@@ -389,7 +389,7 @@ export function InventarioZonasPage() {
         </GlassCard>
 
         {/* Panel del Último Paquete Escaneado */}
-        <GlassCard className="p-6 space-y-3 flex flex-col justify-between">
+        <GlassCard className="p-4 md:p-6 space-y-3 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <h4 className="text-xs font-bold text-slate-300 flex items-center gap-2">
               <PackageCheck className="w-4 h-4 text-blue-400" />
@@ -404,9 +404,9 @@ export function InventarioZonasPage() {
 
           {lastScannedPackage ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-slate-400">Guía:</span>
-                <span className="text-sm font-mono font-extrabold text-blue-300">
+                <span className="text-sm font-mono font-extrabold text-blue-300 break-all text-right min-w-0">
                   {lastScannedPackage.guia}
                 </span>
               </div>
@@ -436,10 +436,10 @@ export function InventarioZonasPage() {
       </div>
 
       {/* Listado de Zonas Registradas (Selección Rápida) */}
-      <GlassCard className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <GlassCard className="p-4 md:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
           <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-emerald-400" />
+            <Layers className="w-5 h-5 text-emerald-400 flex-shrink-0" />
             <h3 className="text-sm font-bold text-white">Resumen de Zonas & Paquetes en Bodega ({zones.length})</h3>
           </div>
           <span className="text-xs text-slate-400">Haz clic en una zona para activarla</span>
@@ -455,7 +455,7 @@ export function InventarioZonasPage() {
             No se han registrado zonas GeoJSON. Dirígete a Configuración &rarr; Sectores para importar zonas y asignar códigos de barras.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
             {zones.map((z) => {
               const isSelected = activeZone?.id === z.id;
 
@@ -487,7 +487,7 @@ export function InventarioZonasPage() {
                   </div>
 
                   <div className="flex items-end justify-between border-t border-slate-800/60 pt-2">
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-slate-400 break-all min-w-0">
                       CB: <b className="text-slate-300">{z.codigo_barras}</b>
                     </span>
                     <div className="text-right">
@@ -506,7 +506,7 @@ export function InventarioZonasPage() {
 
       {/* Tabla de Escaneos Recientes de la Sesión */}
       {recentScans.length > 0 && (
-        <GlassCard className="p-6 space-y-4">
+        <GlassCard className="p-4 md:p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <PackageCheck className="w-4 h-4 text-blue-400" />
@@ -514,8 +514,8 @@ export function InventarioZonasPage() {
             </h3>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="rt-wrap overflow-x-auto">
+            <table className="rt w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400">
                   <th className="pb-2">Hora</th>
@@ -528,11 +528,11 @@ export function InventarioZonasPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {recentScans.map((scan, idx) => (
                   <tr key={idx} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 font-mono text-slate-400">{scan.timestamp}</td>
-                    <td className="py-2.5 font-mono font-bold text-blue-300">{scan.guia}</td>
-                    <td className="py-2.5 font-bold text-emerald-400">{scan.zona_nombre}</td>
-                    <td className="py-2.5 text-slate-300 max-w-xs truncate">{scan.direccion}</td>
-                    <td className="py-2.5">
+                    <td data-label="Hora" className="py-2.5 font-mono text-slate-400">{scan.timestamp}</td>
+                    <td className="rt-title py-2.5 font-mono font-bold text-blue-300 break-all">{scan.guia}</td>
+                    <td data-label="Zona Asignada" className="py-2.5 font-bold text-emerald-400">{scan.zona_nombre}</td>
+                    <td data-label="Dirección" className="py-2.5 text-slate-300 max-w-xs truncate">{scan.direccion}</td>
+                    <td data-label="Detalle Zona" className="py-2.5">
                       {scan.zone_changed ? (
                         <span className="text-[11px] text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
                           Reubicado de {scan.previous_zone}

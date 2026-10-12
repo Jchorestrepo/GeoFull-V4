@@ -447,7 +447,7 @@ export function BodegaMap({ height = '600px', onZoneAssigned }) {
   };
 
   return (
-    <div className={`relative rounded-3xl border border-white/10 overflow-hidden bg-slate-950 flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : ''}`} style={{ height: isFullscreen ? '100vh' : height }}>
+    <div className={`relative rounded-3xl border border-white/10 overflow-hidden bg-slate-950 flex flex-col ${isFullscreen ? 'fixed inset-0 z-50 rounded-none h-dvh-safe' : ''}`} style={{ height: isFullscreen ? '100dvh' : height }}>
       
       {/* Top Filter Bar Controls */}
       <div className="p-3 bg-slate-900/90 border-b border-white/10 flex flex-wrap items-center justify-between gap-3 z-10">

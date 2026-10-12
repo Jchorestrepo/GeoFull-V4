@@ -164,14 +164,15 @@ export function SaaSAdminPage() {
   return (
     <div className="space-y-6">
       {/* Header Consola SaaS */}
+      {/* Header Consola SaaS */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+            <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0">
               <ShieldAlert className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-extrabold text-white tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
                 Consola SaaS Admin Global
               </h2>
               <p className="text-xs text-slate-400">
@@ -181,41 +182,41 @@ export function SaaSAdminPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <button
             onClick={() => {
               setMappingTenant({ id: 'global', nombre: 'Configuración Global (Todas las Empresas)' });
               setShowMappingModal(true);
             }}
-            className="flex items-center gap-2 py-2 px-3.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all cursor-pointer shadow-md shadow-purple-500/10"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2.5 px-3.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all cursor-pointer shadow-md shadow-purple-500/10 touch-target"
           >
-            <FileSpreadsheet className="w-4 h-4 text-purple-400" />
-            Plantillas Globales (+)
+            <FileSpreadsheet className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>Plantillas Globales</span>
           </button>
 
           <button
             onClick={() => setShowDatasetModal(true)}
-            className="flex items-center gap-2 py-2 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2.5 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all cursor-pointer touch-target"
           >
-            <Map className="w-4 h-4 text-purple-400" />
-            Cargar GPKG Ciudad
+            <Map className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>Cargar GPKG</span>
           </button>
 
           <button
             onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-500/25 cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-500/25 cursor-pointer touch-target"
           >
-            <Plus className="w-4 h-4" />
-            Registrar Empresa
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>Registrar Empresa</span>
           </button>
         </div>
       </div>
 
       {/* Tabs de Navegación de la Consola */}
-      <div className="flex border-b border-slate-800 space-x-2">
+      <div className="scroll-x-chips border-b border-slate-800 space-x-2 pb-1 -mx-1 px-1">
         <button
           onClick={() => setActiveTab('metrics')}
-          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === 'metrics'
               ? 'border-purple-500 text-purple-400 bg-purple-500/10 rounded-t-xl'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -227,7 +228,7 @@ export function SaaSAdminPage() {
 
         <button
           onClick={() => setActiveTab('tenants')}
-          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === 'tenants'
               ? 'border-purple-500 text-purple-400 bg-purple-500/10 rounded-t-xl'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -239,7 +240,7 @@ export function SaaSAdminPage() {
 
         <button
           onClick={() => setActiveTab('datasets')}
-          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === 'datasets'
               ? 'border-purple-500 text-purple-400 bg-purple-500/10 rounded-t-xl'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -251,7 +252,7 @@ export function SaaSAdminPage() {
 
         <button
           onClick={() => setActiveTab('audit')}
-          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === 'audit'
               ? 'border-purple-500 text-purple-400 bg-purple-500/10 rounded-t-xl'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -530,8 +531,8 @@ export function SaaSAdminPage() {
 
       {/* MODAL: REGISTRAR EMPRESA */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <GlassCard className="w-full max-w-md p-6 rounded-3xl space-y-4 border-purple-500/30">
+        <div className="modal-overlay bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <GlassCard className="modal-sheet w-full max-w-md p-5 sm:p-6 rounded-3xl space-y-4 border-purple-500/30">
             <h3 className="font-bold text-base text-white">Registrar Empresa SaaS</h3>
             <form onSubmit={handleCreateTenant} className="space-y-3 text-xs">
               <div>
@@ -592,10 +593,10 @@ export function SaaSAdminPage() {
               </div>
 
               <div className="flex gap-2 pt-3">
-                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold cursor-pointer">
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold cursor-pointer touch-target flex items-center justify-center">
                   Guardar Empresa
                 </button>
-                <button type="button" onClick={() => setShowCreateModal(false)} className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer">
+                <button type="button" onClick={() => setShowCreateModal(false)} className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer touch-target flex items-center justify-center">
                   Cancelar
                 </button>
               </div>
@@ -606,8 +607,8 @@ export function SaaSAdminPage() {
 
       {/* MODAL: EDITAR EMPRESA */}
       {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <GlassCard className="w-full max-w-md p-6 rounded-3xl space-y-4 border-purple-500/30">
+        <div className="modal-overlay bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <GlassCard className="modal-sheet w-full max-w-md p-5 sm:p-6 rounded-3xl space-y-4 border-purple-500/30">
             <h3 className="font-bold text-base text-white">Editar Empresa ({editForm.id})</h3>
             <form onSubmit={handleUpdateTenant} className="space-y-3 text-xs">
               <div>
@@ -655,10 +656,10 @@ export function SaaSAdminPage() {
               </div>
 
               <div className="flex gap-2 pt-3">
-                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold cursor-pointer">
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold cursor-pointer touch-target flex items-center justify-center">
                   Guardar Cambios
                 </button>
-                <button type="button" onClick={() => setShowEditModal(false)} className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer">
+                <button type="button" onClick={() => setShowEditModal(false)} className="py-2.5 px-4 rounded-xl bg-slate-800 text-slate-300 hover:text-white cursor-pointer touch-target flex items-center justify-center">
                   Cancelar
                 </button>
               </div>

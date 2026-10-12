@@ -262,17 +262,17 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <GlassCard className="w-full max-w-3xl p-6 rounded-3xl space-y-5 border-purple-500/30 max-h-[90vh] flex flex-col justify-between overflow-hidden">
+    <div className="modal-overlay bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <GlassCard className="modal-sheet w-full max-w-3xl p-4 sm:p-6 rounded-3xl space-y-5 border-purple-500/30 max-h-[92dvh] md:max-h-[90vh] flex flex-col justify-between overflow-hidden">
         {/* Header Modal */}
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+        <div className="flex items-start sm:items-center justify-between border-b border-slate-800/80 pb-4 gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0">
               <Building2 className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-lg text-white tracking-tight">Plantillas Globales de Mapeo</h3>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight">Plantillas Globales de Mapeo</h3>
                 <Badge variant="purple">Global SaaS (Todas las Empresas)</Badge>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -280,43 +280,43 @@ export function TenantColumnMappingModal({ tenant, isOpen, onClose, onSuccess })
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+          <button onClick={onClose} className="touch-target p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tabs Modal */}
-        <div className="flex items-center justify-between border-b border-slate-800">
-          <div className="flex space-x-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 gap-2 pb-2">
+          <div className="scroll-x-chips space-x-2 pb-1">
             <button
               onClick={() => { setActiveTab('sectorizacion'); setShowCreator(false); }}
-              className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
+              className={`py-2 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${
                 activeTab === 'sectorizacion'
                   ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10 rounded-t-xl'
                   : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
               <FileSpreadsheet className="w-4 h-4" />
-              Mapeo Sectorización / Envíos ({templates.plantillas_sectorizacion.length})
+              Mapeo Sectorización ({templates.plantillas_sectorizacion.length})
             </button>
 
             <button
               onClick={() => { setActiveTab('conciliacion'); setShowCreator(false); }}
-              className={`py-2 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
+              className={`py-2 px-3 sm:px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 shrink-0 ${
                 activeTab === 'conciliacion'
                   ? 'border-blue-500 text-blue-400 bg-blue-500/10 rounded-t-xl'
                   : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
               <Layers className="w-4 h-4" />
-              Mapeo Conciliación / Rutas ({templates.plantillas_conciliacion.length})
+              Mapeo Conciliación ({templates.plantillas_conciliacion.length})
             </button>
           </div>
 
           {!showCreator && (
             <button
               onClick={() => { resetCreatorForm(); setShowCreator(true); }}
-              className="py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-purple-500/20 cursor-pointer"
+              className="py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 cursor-pointer w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               Agregar Variante por Archivo

@@ -36,7 +36,7 @@ export function ConfiguracionPage() {
       </div>
 
       {/* Tab Navigation */}
-      <GlassCard className="p-2 flex items-center gap-2 overflow-x-auto">
+      <GlassCard className="p-2 flex items-center gap-2 scroll-x-chips">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isSelected = activeTab === tab.id;
@@ -44,7 +44,7 @@ export function ConfiguracionPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl border transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl border transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 touch-target ${
                 isSelected
                   ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-lg shadow-blue-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'

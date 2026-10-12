@@ -211,26 +211,26 @@ export function BarcodeScannerStation({ onOrderFound }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             {/* Toggle Modo TV Pantalla Gigante */}
             <button
               onClick={() => setIsTvMode(true)}
-              className="flex items-center gap-2 py-2 px-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-500/20"
+              className="flex-1 sm:flex-initial touch-target flex items-center justify-center gap-2 py-2 px-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-lg shadow-purple-500/20"
             >
-              <Tv className="w-4 h-4" />
+              <Tv className="w-4 h-4 shrink-0" />
               <span>Modo TV / Pantalla Gigante</span>
             </button>
 
             {/* Toggle de Voz */}
             <button
               onClick={() => setVoiceEnabled(!voiceEnabled)}
-              className={`flex items-center gap-2 py-2 px-3.5 rounded-2xl text-xs font-bold transition-all border ${
+              className={`flex-1 sm:flex-initial touch-target flex items-center justify-center gap-2 py-2 px-3.5 rounded-2xl text-xs font-bold transition-all border ${
                 voiceEnabled
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-lg shadow-emerald-500/10'
                   : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
               }`}
             >
-              {voiceEnabled ? <Volume2 className="w-4 h-4 text-emerald-400 animate-bounce" /> : <VolumeX className="w-4 h-4" />}
+              {voiceEnabled ? <Volume2 className="w-4 h-4 text-emerald-400 animate-bounce shrink-0" /> : <VolumeX className="w-4 h-4 shrink-0" />}
               <span>{voiceEnabled ? 'Voz Activada' : 'Voz Silenciada'}</span>
             </button>
           </div>
@@ -323,25 +323,25 @@ export function BarcodeScannerStation({ onOrderFound }) {
 
       {/* OVERLAY COMPLETO: MODO TV / PANTALLA GIGANTE DE ALMACÉN */}
       {isTvMode && (
-        <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col p-8 overflow-hidden animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col p-4 sm:p-8 h-dvh-safe overflow-y-auto animate-fadeIn pb-safe">
           {/* Top TV Bar */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 mb-4 sm:mb-6 gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30">
-                <Tv className="w-8 h-8 animate-pulse" />
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 shrink-0">
+                <Tv className="w-6 h-6 sm:w-8 sm:h-8 animate-pulse" />
               </div>
               <div>
-                <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                  GeoFull V4 — Estación TV de Escaneo Almacén
+                <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                  GeoFull V4 — Estación TV
                 </h2>
-                <p className="text-xs text-slate-400">Modo de Alta Visibilidad para Monitores / Televisores de Bodega</p>
+                <p className="text-xs text-slate-400">Modo de Alta Visibilidad para Monitores / Celular en Bodega</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={() => setVoiceEnabled(!voiceEnabled)}
-                className={`flex items-center gap-2 py-2 px-4 rounded-2xl text-xs font-bold transition-all border ${
+                className={`flex-1 sm:flex-initial touch-target flex items-center justify-center gap-2 py-2 px-3 sm:px-4 rounded-2xl text-xs font-bold transition-all border ${
                   voiceEnabled ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-slate-800 text-slate-400'
                 }`}
               >
@@ -351,9 +351,10 @@ export function BarcodeScannerStation({ onOrderFound }) {
 
               <button
                 onClick={() => setIsTvMode(false)}
-                className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700"
+                className="touch-target p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700 flex items-center justify-center shrink-0"
+                aria-label="Cerrar modo TV"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
           </div>

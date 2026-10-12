@@ -2,12 +2,249 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   Base móvil: viewport dinámico, safe areas, sin zoom iOS en inputs
+   ========================================================================== */
+@layer base {
+  :root {
+    --tabbar-h: 4.25rem;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-top: env(safe-area-inset-top, 0px);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  /* Evita el auto-zoom de iOS Safari al enfocar inputs (< 16px) */
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
 @layer utilities {
   .apple-glass {
     background: rgba(15, 23, 42, 0.65);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  /* Altura de pantalla real (barra del navegador móvil) */
+  .h-dvh-safe {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .min-h-dvh-safe {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Espacio inferior para que el Tab Bar móvil no tape contenido */
+  .pb-tabbar {
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 1rem);
+  }
+  @media (min-width: 768px) {
+    .pb-tabbar {
+      padding-bottom: 1.5rem;
+    }
+  }
+
+  .pb-safe {
+    padding-bottom: max(var(--safe-bottom), 0.75rem);
+  }
+
+  /* Objetivo táctil mínimo 44px en móvil */
+  @media (max-width: 767px) {
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* Scroll horizontal tipo "chips" sin barra visible */
+  .scroll-x-chips {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .scroll-x-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .scroll-x-chips > * {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+}
+
+/* ==========================================================================
+   Modales responsivos: Bottom Sheet en móvil, centrados en desktop
+   Uso:  <div className="modal-overlay ..."><div className="modal-sheet ...">
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+@media (min-width: 768px) {
+  .modal-overlay {
+    align-items: center;
+    padding: 1rem;
+  }
+}
+
+.modal-sheet {
+  width: 100%;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  padding-bottom: max(var(--safe-bottom), 1rem);
+  animation: sheetUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (min-width: 768px) {
+  .modal-sheet {
+    max-height: 90vh;
+    max-height: 90dvh;
+    border-bottom-left-radius: 1.5rem !important;
+    border-bottom-right-radius: 1.5rem !important;
+    padding-bottom: 0;
+    animation: none;
+  }
+}
+
+/* Asa visual del sheet (solo móvil) */
+.modal-sheet::before {
+  content: '';
+  display: block;
+  width: 2.5rem;
+  height: 0.3rem;
+  margin: 0.5rem auto 0.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+@media (min-width: 768px) {
+  .modal-sheet::before {
+    display: none;
+  }
+}
+
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Tablas responsivas: se apilan como tarjetas en contenedores angostos.
+   Uso: <div className="rt-wrap"><table className="rt"> ... <td data-label="Columna">
+   ========================================================================== */
+.rt-wrap {
+  container-type: inline-size;
+}
+
+@container (max-width: 639px) {
+  table.rt,
+  table.rt thead,
+  table.rt tbody,
+  table.rt tr,
+  table.rt th,
+  table.rt td {
+    display: block;
+    width: 100%;
+  }
+
+  table.rt thead {
+    display: none;
+  }
+
+  table.rt tbody tr {
+    margin: 0.5rem 0.5rem 0.75rem;
+    width: auto;
+    padding: 0.75rem 0.875rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  table.rt tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.4rem 0 !important;
+    border: none !important;
+    text-align: right !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  table.rt tbody td > * {
+    min-width: 0;
+  }
+
+  table.rt tbody td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgb(100 116 139);
+  }
+
+  /* Celda "título" de la tarjeta (primera celda o marcada) */
+  table.rt tbody td.rt-title {
+    justify-content: flex-start;
+    text-align: left !important;
+    padding-bottom: 0.6rem !important;
+    margin-bottom: 0.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+    font-weight: 600;
+  }
+  table.rt tbody td.rt-title::before {
+    display: none;
+  }
+
+  /* Celda de acciones: botones a lo ancho */
+  table.rt tbody td.rt-actions {
+    justify-content: flex-end;
+    padding-top: 0.6rem !important;
+    margin-top: 0.25rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  }
+  table.rt tbody td.rt-actions::before {
+    display: none;
+  }
+
+  /* Filas de estado vacío / colSpan */
+  table.rt tbody td[colspan] {
+    justify-content: center;
+    text-align: center !important;
   }
 }
 
@@ -31,4 +268,13 @@
 .zone-number-badge-clean {
   background: transparent !important;
   border: none !important;
+}
+
+/* Leaflet: controles más grandes en táctil */
+@media (pointer: coarse) {
+  .leaflet-touch .leaflet-bar a {
+    width: 40px;
+    height: 40px;
+    line-height: 40px;
+  }
 }

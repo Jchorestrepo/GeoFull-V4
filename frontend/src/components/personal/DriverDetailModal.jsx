@@ -383,12 +383,12 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
   const isTempCedula = formData.cedula.startsWith('AUTO-DA');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <GlassCard className="w-full max-w-3xl p-0 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white flex flex-col max-h-[92vh] overflow-hidden">
+    <div className="modal-overlay">
+      <GlassCard className="modal-sheet w-full max-w-3xl p-0 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white flex flex-col max-h-[92dvh] md:max-h-[90vh] overflow-hidden">
         
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-white/10 bg-slate-950/60 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-white/10 bg-slate-950/60 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="relative w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30 overflow-hidden flex items-center justify-center flex-shrink-0">
               {formData.foto ? (
                 <img src={formData.foto} alt="" className="w-full h-full object-cover" />
@@ -396,14 +396,14 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
                 <User className="w-6 h-6" />
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-base text-white">{formData.nombre_completo}</h3>
+                <h3 className="font-extrabold text-base text-white truncate">{formData.nombre_completo}</h3>
                 <Badge variant={formData.activo ? 'emerald' : 'red'}>
                   {formData.activo ? 'Activo' : 'Inactivo'}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-400 flex flex-wrap items-center gap-2 mt-0.5">
                 <span>Cédula:</span>
                 <span className="font-mono text-slate-200 font-bold">{formData.cedula}</span>
                 {isTempCedula && (
@@ -416,14 +416,14 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+            className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-all touch-target shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Operational Stats Strip */}
-        <div className="grid grid-cols-3 gap-3 p-3 mx-6 mt-4 rounded-2xl bg-slate-950/80 border border-white/5 flex-shrink-0">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 mx-4 sm:mx-6 mt-4 rounded-2xl bg-slate-950/80 border border-white/5 flex-shrink-0">
           <div className="text-center p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
             <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Entregados</p>
             <p className="text-base font-extrabold text-white mt-0.5">{driver.total_entregados || 0}</p>
@@ -439,7 +439,7 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-white/10 px-6 mt-3 gap-2 overflow-x-auto flex-shrink-0 bg-slate-950/40">
+        <div className="flex border-b border-white/10 px-4 sm:px-6 mt-3 gap-2 scroll-x-chips flex-shrink-0 bg-slate-950/40">
           {[
             { id: 'personal', label: 'Info Personal', icon: User },
             { id: 'bancaria', label: `Info Bancaria ${formData.cuentas_bancarias.length > 0 ? `(${formData.cuentas_bancarias.length + 1})` : ''}`, icon: CreditCard },
@@ -454,7 +454,7 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 type="button"
-                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap shrink-0 touch-target ${
                   isSelected
                     ? 'border-blue-500 text-blue-400 bg-blue-500/10 rounded-t-xl'
                     : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -1303,18 +1303,18 @@ export function DriverDetailModal({ driver, onClose, onDriverUpdated }) {
           )}
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10 flex-shrink-0">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 p-4 sm:p-6 border-t border-white/10 flex-shrink-0 bg-slate-950/60">
             <button
               type="button"
               onClick={onClose}
-              className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all text-xs"
+              className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-all text-xs touch-target text-center"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="py-2.5 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50 text-xs"
+              className="py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50 text-xs touch-target"
             >
               <Save className="w-4 h-4" />
               <span>{saving ? 'Guardando...' : 'Guardar Cambios'}</span>

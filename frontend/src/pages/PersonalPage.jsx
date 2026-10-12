@@ -162,10 +162,10 @@ export function PersonalPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
           <button
             onClick={() => setShowUnifyModal(true)}
-            className="flex items-center gap-2 py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700 touch-target"
           >
             <Merge className="w-4 h-4 text-purple-400" />
             Unificar Domiciliarios
@@ -173,7 +173,7 @@ export function PersonalPage() {
 
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 py-2.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-lg shadow-blue-500/20"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all shadow-lg shadow-blue-500/20 touch-target"
           >
             <UserPlus className="w-4 h-4" />
             Nuevo Domiciliario
@@ -182,10 +182,10 @@ export function PersonalPage() {
       </div>
 
       {/* Module Tabs Selector */}
-      <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+      <div className="flex items-center gap-2 border-b border-white/10 pb-3 scroll-x-chips">
         <button
           onClick={() => setActiveMainTab('directorio')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap shrink-0 touch-target ${
             activeMainTab === 'directorio'
               ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
               : 'bg-slate-900/60 text-slate-400 hover:text-white border border-white/5'
@@ -197,7 +197,7 @@ export function PersonalPage() {
 
         <button
           onClick={() => setActiveMainTab('nomina')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap shrink-0 touch-target ${
             activeMainTab === 'nomina'
               ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20'
               : 'bg-slate-900/60 text-slate-400 hover:text-white border border-white/5'
@@ -212,7 +212,7 @@ export function PersonalPage() {
         <NominaPersonalView />
       ) : (
         <>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
           <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
             <Users className="w-6 h-6" />
@@ -283,8 +283,8 @@ export function PersonalPage() {
         </div>
 
         {/* Drivers Table */}
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar rt-wrap">
+          <table className="w-full text-left border-collapse rt">
             <thead>
               <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40">
                 <th className="p-3">Nombre Completo & Alias</th>
@@ -319,7 +319,7 @@ export function PersonalPage() {
                       onClick={() => setSelectedDriverForEdit(d)}
                       className="hover:bg-slate-800/40 transition-all cursor-pointer group"
                     >
-                      <td className="p-3">
+                      <td data-label="Nombre" className="p-3">
                         <div className="font-bold text-slate-100 group-hover:text-blue-400 transition-colors flex items-center gap-1.5">
                           <span>{d.nombre_completo}</span>
                           <Edit3 className="w-3 h-3 opacity-0 group-hover:opacity-100 text-blue-400 transition-opacity" />
@@ -330,7 +330,7 @@ export function PersonalPage() {
                           </div>
                         )}
                       </td>
-                      <td className="p-3 font-mono font-semibold">
+                      <td data-label="Cédula" className="p-3 font-mono font-semibold">
                         {d.cedula.startsWith('AUTO-DA') ? (
                           <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px]" title="Cédula Temporal Auto-Generada">
                             {d.cedula}
@@ -339,25 +339,25 @@ export function PersonalPage() {
                           <span className="text-slate-200">{d.cedula}</span>
                         )}
                       </td>
-                      <td className="p-3 font-mono text-slate-300">
+                      <td data-label="Teléfono" className="p-3 font-mono text-slate-300">
                         <div className="flex items-center gap-1.5">
                           <Phone className="w-3 h-3 text-slate-500" />
                           <span>{d.telefono || 'N/A'}</span>
                         </div>
                       </td>
-                      <td className="p-3">
+                      <td data-label="Contrato" className="p-3">
                         <Badge variant="blue">{d.tipo_contrato || 'PAQUETEO'}</Badge>
                       </td>
-                      <td className="p-3 font-mono font-semibold text-emerald-400">
+                      <td data-label="Tarifa" className="p-3 font-mono font-semibold text-emerald-400">
                         ${Number(d.tarifa_paquete || 2000).toLocaleString('es-CO')}
                       </td>
-                      <td className="p-3 font-mono font-bold text-emerald-400">
+                      <td data-label="Entregados" className="p-3 font-mono font-bold text-emerald-400">
                         {d.total_entregados || 0}
                       </td>
-                      <td className="p-3 font-mono font-bold text-amber-400">
+                      <td data-label="En Ruta" className="p-3 font-mono font-bold text-amber-400">
                         {d.total_en_ruta || 0}
                       </td>
-                      <td className="p-3 text-right font-mono">
+                      <td data-label="Pendiente" className="p-3 text-right font-mono">
                         <span className="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold text-[11px]">
                           {d.pendientes_liquidacion || 0} paq.
                         </span>
@@ -375,15 +375,15 @@ export function PersonalPage() {
 
       {/* CREATE DRIVER MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-md p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-blue-400" />
                 <h3 className="font-bold text-base text-white">Registrar Nuevo Domiciliario</h3>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -396,7 +396,7 @@ export function PersonalPage() {
                   value={newDriver.nombre_completo}
                   onChange={(e) => setNewDriver({ ...newDriver, nombre_completo: e.target.value })}
                   placeholder="Ej: Carlos Mario Restrepo"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -408,7 +408,7 @@ export function PersonalPage() {
                   value={newDriver.cedula}
                   onChange={(e) => setNewDriver({ ...newDriver, cedula: e.target.value })}
                   placeholder="Ej: 1020304050"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -419,17 +419,17 @@ export function PersonalPage() {
                   value={newDriver.telefono}
                   onChange={(e) => setNewDriver({ ...newDriver, telefono: e.target.value })}
                   placeholder="Ej: 3001234567"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tipo Remuneración:</label>
                   <select
                     value={newDriver.tipo_remuneracion}
                     onChange={(e) => setNewDriver({ ...newDriver, tipo_remuneracion: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                   >
                     <option value="DESTAJO">DESTAJO (Paquetes)</option>
                     <option value="SALARIO_FIJO">SALARIO FIJO</option>
@@ -442,7 +442,7 @@ export function PersonalPage() {
                   <select
                     value={newDriver.periodicidad_pago}
                     onChange={(e) => setNewDriver({ ...newDriver, periodicidad_pago: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-medium"
                   >
                     <option value="GLOBAL">Default Global</option>
                     <option value="DIARIO">DIARIO</option>
@@ -453,7 +453,7 @@ export function PersonalPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Salario Fijo ($):</label>
                   <input
@@ -462,7 +462,7 @@ export function PersonalPage() {
                     value={newDriver.salario_fijo}
                     onChange={(e) => setNewDriver({ ...newDriver, salario_fijo: parseFloat(e.target.value) || 0 })}
                     placeholder="0"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
                   />
                 </div>
 
@@ -474,7 +474,7 @@ export function PersonalPage() {
                     value={newDriver.tarifa_paquete}
                     onChange={(e) => setNewDriver({ ...newDriver, tarifa_paquete: parseFloat(e.target.value) || 0 })}
                     placeholder="2000"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -482,7 +482,7 @@ export function PersonalPage() {
               <button
                 type="submit"
                 disabled={creating}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-blue-500/20 touch-target"
               >
                 <Plus className="w-4 h-4" />
                 <span>{creating ? 'Guardando...' : 'Guardar Domiciliario'}</span>
@@ -494,15 +494,15 @@ export function PersonalPage() {
 
       {/* UNIFY DRIVERS MODAL */}
       {showUnifyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-          <GlassCard className="w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-lg p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/90 text-white space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <Merge className="w-5 h-5 text-purple-400" />
                 <h3 className="font-bold text-base text-white">Unificar Registros por Cédula</h3>
               </div>
-              <button onClick={() => setShowUnifyModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
+              <button onClick={() => setShowUnifyModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -518,7 +518,7 @@ export function PersonalPage() {
                   value={realCedula}
                   onChange={(e) => setRealCedula(e.target.value)}
                   placeholder="Ej: 1020304050"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono font-bold outline-none"
                 />
               </div>
 
@@ -526,7 +526,7 @@ export function PersonalPage() {
                 <label className="block text-slate-400 font-semibold mb-1">Seleccionar Conductores a Unificar:</label>
                 <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar p-2 bg-slate-950/60 rounded-xl border border-slate-800">
                   {drivers.map(d => (
-                    <label key={d.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-800/50 cursor-pointer">
+                    <label key={d.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer touch-target">
                       <input
                         type="checkbox"
                         checked={selectedDriversToUnify.includes(d.id)}
@@ -537,7 +537,7 @@ export function PersonalPage() {
                             setSelectedDriversToUnify(selectedDriversToUnify.filter(id => id !== d.id));
                           }
                         }}
-                        className="rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500"
+                        className="rounded border-slate-700 bg-slate-900 text-purple-600 focus:ring-purple-500 w-4 h-4"
                       />
                       <span className="font-semibold text-slate-200">{d.nombre_completo}</span>
                       <span className="text-[10px] text-slate-500 font-mono">({d.cedula})</span>
@@ -550,7 +550,7 @@ export function PersonalPage() {
             <button
               onClick={handleUnifyDrivers}
               disabled={unifying || selectedDriversToUnify.length < 2 || !realCedula.trim()}
-              className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-40 shadow-lg shadow-purple-500/20"
+              className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-40 shadow-lg shadow-purple-500/20 touch-target"
             >
               {unifying ? 'Unificando...' : 'Confirmar Unificación de Conductores'}
             </button>
