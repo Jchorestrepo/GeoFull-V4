@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Header, Query, status, Depends
 from pydantic import BaseModel
 from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.audit import registrar_historial_evento
 from sqlalchemy import text
 from app.core.database import get_db_session
 from app.geocoder.normalizer import desde_resultado
@@ -134,6 +135,7 @@ async def list_orders(
 @router.post("/process-single", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def process_single_order(
     req: OrderCreateRequest,
+    current_user: dict = Depends(get_current_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Procesa una guía individual: Normalizador -> Geocoder -> Sectorizer -> UPSERT en BD."""
@@ -228,6 +230,28 @@ async def process_single_order(
         await session.commit()
         r = res.first()
 
+        # Registrar evento de auditoría de importación del archivo y asignación geográfica automática
+        zona_info = f" | Zona sugerida por coordenadas: 【{sectorized.zona_nombre}】" if sectorized.zona_nombre else " | Pendiente de sectorización física"
+        desc_evento = f"【Importación】 Archivo cargado en el sistema. Dirección declarada: {req.direccion_original}{zona_info}"
+        await registrar_historial_evento(
+            session=session,
+            tenant_id=x_tenant_id,
+            pedido_id=r.id,
+            guia=r.guia,
+            tipo_evento="IMPORTACION",
+            descripcion=desc_evento,
+            estado_anterior=None,
+            estado_nuevo=estado_pedido,
+            usuario_id=current_user.get("id") if current_user.get("id") else None,
+            usuario_nombre=current_user.get("nombre") or current_user.get("email") or "Operador Importación",
+            detalles={
+                "direccion_limpia": resultado.direccion,
+                "zona_nombre": sectorized.zona_nombre,
+                "nivel_precision": geocoded.nivel_precision
+            }
+        )
+        await session.commit()
+
         return _build_order_response(r)
 
 
@@ -235,6 +259,7 @@ async def process_single_order(
 async def assign_zone_manually(
     order_id: uuid.UUID,
     req: AssignZoneRequest,
+    current_user: dict = Depends(get_current_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Asigna o reasigna manualmente una zona a un pedido (ej: pedidos FUERA_DE_ZONA)."""
@@ -246,6 +271,13 @@ async def assign_zone_manually(
         z = res_z.first()
         if not z:
             raise HTTPException(status_code=404, detail="La zona seleccionada no existe")
+
+        # Obtener estado y zona anterior para auditoría
+        res_prev = await session.execute(
+            text("SELECT zona_nombre, estado, guia FROM pedidos WHERE id = :id AND tenant_id = :tenant_id LIMIT 1"),
+            {"id": order_id, "tenant_id": x_tenant_id}
+        )
+        prev_p = res_prev.first()
 
         update_sql = text("""
             UPDATE pedidos
@@ -262,10 +294,26 @@ async def assign_zone_manually(
             "zona_id": req.zona_id,
             "zona_nombre": z.nombre_zona
         })
-        await session.commit()
         r = res.first()
         if not r:
             raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+        user_name = current_user.get("nombre") or current_user.get("email") or "Operador"
+        prev_zona = prev_p.zona_nombre if prev_p else "Sin Zona"
+        await registrar_historial_evento(
+            session=session,
+            tenant_id=x_tenant_id,
+            pedido_id=r.id,
+            guia=r.guia,
+            tipo_evento="REASIGNACION_ZONA",
+            descripcion=f"【Reasignación de Zona】 Operador 【{user_name}】 reasignó el paquete de 【{prev_zona}】 a 【{z.nombre_zona}】.",
+            estado_anterior=prev_p.estado if prev_p else None,
+            estado_nuevo="SECTORIZADO",
+            usuario_id=current_user.get("id") if current_user.get("id") else None,
+            usuario_nombre=user_name,
+            detalles={"zona_anterior": prev_zona, "zona_nueva": z.nombre_zona}
+        )
+        await session.commit()
 
         return _build_order_response(r)
 

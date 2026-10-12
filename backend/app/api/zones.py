@@ -4,6 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException, Header, status, Depends
 from pydantic import BaseModel
 from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.audit import registrar_historial_evento
 from sqlalchemy import text
 from app.core.database import get_db_session
 
@@ -390,6 +391,7 @@ async def reset_zone_inventory(
 @router.post("/inventory-scan-package")
 async def scan_package_inventory(
     payload: InventoryScanPackageReq,
+    current_user: dict = Depends(get_current_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Escanear un paquete/guía y ubicarlo en la zona activa en estado EN_BODEGA."""
@@ -420,6 +422,7 @@ async def scan_package_inventory(
 
         zone_changed = False
         is_new = False
+        user_name = current_user.get("nombre") or current_user.get("email") or "Operador de Bodega"
 
         if pedido:
             # Si el paquete existía previamente y estaba en otra zona o no estaba en bodega
@@ -441,8 +444,30 @@ async def scan_package_inventory(
                 "id": pedido.id,
                 "tenant_id": x_tenant_id
             })
-            await session.commit()
             updated_p = upd_res.first()
+
+            desc_escaneo = f"【Ingreso a Bodega】 Paquete escaneado en zona 【{target_zone_name}】 por operador 【{user_name}】."
+            if zone_changed:
+                desc_escaneo = f"【Reubicación Bodega】 Paquete reubicado de 【{pedido.zona_nombre or 'Sin Zona'}】 a 【{target_zone_name}】 por operador 【{user_name}】."
+
+            await registrar_historial_evento(
+                session=session,
+                tenant_id=x_tenant_id,
+                pedido_id=updated_p.id,
+                guia=updated_p.guia,
+                tipo_evento="REUBICACION_BODEGA" if zone_changed else "INGRESO_BODEGA",
+                descripcion=desc_escaneo,
+                estado_anterior=pedido.estado,
+                estado_nuevo="EN_BODEGA",
+                usuario_id=current_user.get("id") if current_user.get("id") else None,
+                usuario_nombre=user_name,
+                detalles={
+                    "zona_anterior": pedido.zona_nombre,
+                    "zona_nueva": target_zone_name
+                }
+            )
+            await session.commit()
+
             return {
                 "status": "ok",
                 "is_new": False,
@@ -470,8 +495,23 @@ async def scan_package_inventory(
                 "zone_id": zone_id,
                 "zone_name": target_zone_name
             })
-            await session.commit()
             new_p = ins_res.first()
+
+            await registrar_historial_evento(
+                session=session,
+                tenant_id=x_tenant_id,
+                pedido_id=new_p.id,
+                guia=new_p.guia,
+                tipo_evento="INGRESO_BODEGA",
+                descripcion=f"【Ingreso a Bodega】 Nueva guía creada por escaneo directo en zona 【{target_zone_name}】 por operador 【{user_name}】.",
+                estado_anterior=None,
+                estado_nuevo="EN_BODEGA",
+                usuario_id=current_user.get("id") if current_user.get("id") else None,
+                usuario_nombre=user_name,
+                detalles={"zona": target_zone_name}
+            )
+            await session.commit()
+
             return {
                 "status": "ok",
                 "is_new": True,

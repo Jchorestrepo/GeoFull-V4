@@ -137,6 +137,18 @@ export function BarcodeScannerStation({ onOrderFound }) {
         onOrderFound?.(matchedOrder);
         playBeep('success');
 
+        // Registrar evento físico de escaneo en la estación de sectorización (Auditoría & Trazabilidad)
+        const token = localStorage.getItem('token');
+        const activeTenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
+        axios.post('/api/v1/orders/scan-station', { guia: matchedOrder.guia }, {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+            'x-tenant-id': activeTenantId
+          }
+        }).catch(scanErr => {
+          console.warn("No se pudo registrar la auditoría de escaneo en estación:", scanErr);
+        });
+
         // Locución de Voz
         if (matchedOrder.zona_nombre) {
           const cleanZoneName = matchedOrder.zona_nombre.replace(/^\d+[_-\s]*/, '');

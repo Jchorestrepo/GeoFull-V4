@@ -125,8 +125,12 @@ export function ExcelUploader({ onBatchComplete }) {
 
       if (payload.direccion_original) {
         try {
+          const token = localStorage.getItem('token');
           const res = await axios.post('/api/v1/orders/process-single', payload, {
-            headers: { 'X-Tenant-ID': tenantId }
+            headers: {
+              Authorization: token ? `Bearer ${token}` : '',
+              'X-Tenant-ID': tenantId
+            }
           });
 
           const orderData = res.data;

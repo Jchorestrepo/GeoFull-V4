@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
 from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.audit import registrar_historial_evento
 
 router = APIRouter(prefix="/reconciliation", tags=["Control & Conciliación Diaria (Etapa 5)"])
 
@@ -121,7 +122,11 @@ async def get_or_create_driver(session, tenant_id: str, driver_name: str) -> Dic
 
 
 @router.post("/process-routes")
-async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depends(get_tenant_id)):
+async def process_batch_routes(
+    req: BatchRouteRequest,
+    current_user: dict = Depends(get_current_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
     """
     Procesa masivamente la planilla de rutas asignadas / entregadas (iMile).
     - Si trae fecha/hora de entrega ('Delivered time') -> estado = 'ENTREGADO'.
@@ -139,6 +144,7 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
         nuevos_creados = 0
         existentes_actualizados = 0
         conductores_vistos = set()
+        user_name = current_user.get("nombre") or current_user.get("email") or "Operador Despacho"
 
         for item in req.items:
             guia_clean = item.guia.strip()
@@ -163,7 +169,7 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
             proveedor = item.proveedor or "iMile"
 
             # Verificar si el pedido ya existe en el sistema
-            check_sql = text("SELECT id FROM pedidos WHERE tenant_id = :tenant_id AND guia = :guia LIMIT 1")
+            check_sql = text("SELECT id, estado, zona_nombre FROM pedidos WHERE tenant_id = :tenant_id AND guia = :guia LIMIT 1")
             res_check = await session.execute(check_sql, {"tenant_id": x_tenant_id, "guia": guia_clean})
             existing = res_check.first()
 
@@ -179,8 +185,9 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
                         proveedor_entrega = :proveedor,
                         fecha_actualizacion = CURRENT_TIMESTAMP
                     WHERE tenant_id = :tenant_id AND guia = :guia
+                    RETURNING id
                 """)
-                await session.execute(update_sql, {
+                res_upd = await session.execute(update_sql, {
                     "tenant_id": x_tenant_id,
                     "guia": guia_clean,
                     "estado": nuevo_estado,
@@ -189,6 +196,27 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
                     "dom_nombre": driver_info["nombre_completo"],
                     "proveedor": proveedor
                 })
+                p_id = res_upd.first().id
+
+                # Auditoría
+                desc = (
+                    f"【Entrega Conciliada】 Paquete entregado por mensajero 【{driver_info['nombre_completo']}】 ({proveedor})."
+                    if nuevo_estado == "ENTREGADO"
+                    else f"【Despacho a Ruta】 Paquete asignado al mensajero 【{driver_info['nombre_completo']}】 ({proveedor})."
+                )
+                await registrar_historial_evento(
+                    session=session,
+                    tenant_id=x_tenant_id,
+                    pedido_id=p_id,
+                    guia=guia_clean,
+                    tipo_evento=nuevo_estado,
+                    descripcion=desc,
+                    estado_anterior=existing.estado,
+                    estado_nuevo=nuevo_estado,
+                    usuario_id=current_user.get("id") if current_user.get("id") else None,
+                    usuario_nombre=user_name,
+                    detalles={"conductor": driver_info["nombre_completo"], "proveedor": proveedor}
+                )
             else:
                 nuevos_creados += 1
                 insert_sql = text("""
@@ -201,8 +229,9 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
                         :fecha_entrega, :dom_id, :dom_nombre,
                         FALSE, :proveedor, CAST(:datos_extra AS JSONB)
                     )
+                    RETURNING id
                 """)
-                await session.execute(insert_sql, {
+                res_ins = await session.execute(insert_sql, {
                     "tenant_id": x_tenant_id,
                     "guia": guia_clean,
                     "estado": nuevo_estado,
@@ -212,6 +241,26 @@ async def process_batch_routes(req: BatchRouteRequest, x_tenant_id: str = Depend
                     "proveedor": proveedor,
                     "datos_extra": datos_extra_json
                 })
+                new_id = res_ins.first().id
+
+                desc = (
+                    f"【Carga Conciliación】 Paquete registrado con entrega completada por 【{driver_info['nombre_completo']}】."
+                    if nuevo_estado == "ENTREGADO"
+                    else f"【Carga Planilla】 Paquete ingresado y despachado con mensajero 【{driver_info['nombre_completo']}】."
+                )
+                await registrar_historial_evento(
+                    session=session,
+                    tenant_id=x_tenant_id,
+                    pedido_id=new_id,
+                    guia=guia_clean,
+                    tipo_evento=nuevo_estado,
+                    descripcion=desc,
+                    estado_anterior=None,
+                    estado_nuevo=nuevo_estado,
+                    usuario_id=current_user.get("id") if current_user.get("id") else None,
+                    usuario_nombre=user_name,
+                    detalles={"conductor": driver_info["nombre_completo"], "proveedor": proveedor}
+                )
 
         await session.commit()
 
