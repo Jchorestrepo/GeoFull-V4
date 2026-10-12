@@ -116,16 +116,44 @@ export function RouteUploader({ onBatchComplete }) {
     })).filter(i => i.guia !== '');
 
     try {
-      setProgress(60);
-      const res = await axios.post('/api/v1/reconciliation/process-routes', {
-        items: routeItems
-      }, {
-        headers: { 'X-Tenant-ID': tenantId }
-      });
+      // Enviar en lotes para no superar el límite de tamaño del proxy (413)
+      const CHUNK_SIZE = 500;
+      const totals = {
+        status: 'ok',
+        total_procesados: 0,
+        entregados_count: 0,
+        asignados_count: 0,
+        nuevos_creados: 0,
+        existentes_actualizados: 0,
+        conductores_involucrados: 0,
+        nombres_conductores: []
+      };
+      const conductores = new Set();
+
+      for (let i = 0; i < routeItems.length; i += CHUNK_SIZE) {
+        const chunk = routeItems.slice(i, i + CHUNK_SIZE);
+        const { data } = await axios.post('/api/v1/reconciliation/process-routes', {
+          items: chunk
+        }, {
+          headers: { 'X-Tenant-ID': tenantId }
+        });
+
+        totals.total_procesados += data.total_procesados || 0;
+        totals.entregados_count += data.entregados_count || 0;
+        totals.asignados_count += data.asignados_count || 0;
+        totals.nuevos_creados += data.nuevos_creados || 0;
+        totals.existentes_actualizados += data.existentes_actualizados || 0;
+        (data.nombres_conductores || []).forEach(n => conductores.add(n));
+
+        setProgress(20 + Math.round(((i + chunk.length) / routeItems.length) * 80));
+      }
+
+      totals.nombres_conductores = Array.from(conductores);
+      totals.conductores_involucrados = conductores.size;
 
       setProgress(100);
-      setSummary(res.data);
-      onBatchComplete?.(res.data);
+      setSummary(totals);
+      onBatchComplete?.(totals);
     } catch (err) {
       console.error("Error procesando lote de conciliación", err);
       setErrorModal(err.response?.data?.detail || "Ocurrió un error al procesar la planilla de rutas.");
