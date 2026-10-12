@@ -6,13 +6,17 @@ let cachedOrdersByTenant = {};
 let cachedZonesByTenant = {};
 let cachedDashboardStatsByTenant = {};
 let cachedZonesGeoJSONByTenant = {};
+let cachedReconciliationOrdersByTenant = {};
+let cachedReconciliationSummaryByTenant = {};
 
 let ordersFetchPromises = {};
 let zonesFetchPromises = {};
 let dashboardStatsPromises = {};
 let zonesGeoJSONPromises = {};
+let reconciliationOrdersPromises = {};
+let reconciliationSummaryPromises = {};
 
-let lastFetchTimestamp = {}; // tenantId -> { orders, zones, dashboard, zonesGeoJSON }
+let lastFetchTimestamp = {}; // tenantId -> { orders, zones, dashboard, zonesGeoJSON, reconciliationOrders, reconciliationSummary }
 let hasMutatedByTenant = {};
 
 const STALE_TTL_MS = 60 * 60 * 1000; // 1 hour (60 minutes)
@@ -60,6 +64,8 @@ export const dataCache = {
     delete cachedZonesByTenant[tid];
     delete cachedDashboardStatsByTenant[tid];
     delete cachedZonesGeoJSONByTenant[tid];
+    delete cachedReconciliationOrdersByTenant[tid];
+    delete cachedReconciliationSummaryByTenant[tid];
     emitCacheChange();
   },
 
@@ -152,6 +158,50 @@ export const dataCache = {
     return zonesGeoJSONPromises[tenantId];
   },
 
+  getReconciliationOrders: async (forceRefresh = false) => {
+    const tenantId = getActiveTenantId();
+    if (cachedReconciliationOrdersByTenant[tenantId] && !forceRefresh && !hasMutatedByTenant[tenantId]) {
+      return cachedReconciliationOrdersByTenant[tenantId];
+    }
+    if (reconciliationOrdersPromises[tenantId] && !forceRefresh) {
+      return reconciliationOrdersPromises[tenantId];
+    }
+    reconciliationOrdersPromises[tenantId] = axios.get('/api/v1/reconciliation/orders', {
+      headers: { 'X-Tenant-ID': tenantId }
+    }).then(res => {
+      cachedReconciliationOrdersByTenant[tenantId] = res.data;
+      reconciliationOrdersPromises[tenantId] = null;
+      recordFetchTime(tenantId, 'reconciliationOrders');
+      return cachedReconciliationOrdersByTenant[tenantId];
+    }).catch(err => {
+      reconciliationOrdersPromises[tenantId] = null;
+      throw err;
+    });
+    return reconciliationOrdersPromises[tenantId];
+  },
+
+  getReconciliationSummary: async (forceRefresh = false) => {
+    const tenantId = getActiveTenantId();
+    if (cachedReconciliationSummaryByTenant[tenantId] && !forceRefresh && !hasMutatedByTenant[tenantId]) {
+      return cachedReconciliationSummaryByTenant[tenantId];
+    }
+    if (reconciliationSummaryPromises[tenantId] && !forceRefresh) {
+      return reconciliationSummaryPromises[tenantId];
+    }
+    reconciliationSummaryPromises[tenantId] = axios.get('/api/v1/reconciliation/summary', {
+      headers: { 'X-Tenant-ID': tenantId }
+    }).then(res => {
+      cachedReconciliationSummaryByTenant[tenantId] = res.data;
+      reconciliationSummaryPromises[tenantId] = null;
+      recordFetchTime(tenantId, 'reconciliationSummary');
+      return cachedReconciliationSummaryByTenant[tenantId];
+    }).catch(err => {
+      reconciliationSummaryPromises[tenantId] = null;
+      throw err;
+    });
+    return reconciliationSummaryPromises[tenantId];
+  },
+
   invalidateOrders: (tenantId = null) => {
     const tid = tenantId || getActiveTenantId();
     delete cachedOrdersByTenant[tid];
@@ -169,10 +219,14 @@ export const dataCache = {
     cachedZonesByTenant = {};
     cachedDashboardStatsByTenant = {};
     cachedZonesGeoJSONByTenant = {};
+    cachedReconciliationOrdersByTenant = {};
+    cachedReconciliationSummaryByTenant = {};
     ordersFetchPromises = {};
     zonesFetchPromises = {};
     dashboardStatsPromises = {};
     zonesGeoJSONPromises = {};
+    reconciliationOrdersPromises = {};
+    reconciliationSummaryPromises = {};
     emitCacheChange();
   },
 

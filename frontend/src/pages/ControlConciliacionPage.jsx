@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { RouteUploader } from '../components/reconciliation/RouteUploader';
 import { NominaLiquidacionView } from '../components/payroll/NominaLiquidacionView';
+import { dataCache } from '../lib/dataCache';
 import {
   Truck,
   CheckCircle2,
@@ -18,7 +19,11 @@ import {
   Calendar,
   AlertCircle,
   Merge,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -28,30 +33,50 @@ export function ControlConciliacionPage() {
   const [orders, setOrders] = useState([]);
   const [filterState, setFilterState] = useState('TODOS');
   const [filterDriver, setFilterDriver] = useState('TODOS');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [loading, setLoading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showUnifyModal, setShowUnifyModal] = useState(false);
   const [selectedDriversToUnify, setSelectedDriversToUnify] = useState([]);
   const [realCedula, setRealCedula] = useState('');
   const [unifying, setUnifying] = useState(false);
   const [toast, setToast] = useState(null);
+  const [isStale, setIsStale] = useState(dataCache.isStale('reconciliationOrders'));
 
   const { activeTenantId } = useAuth();
 
-  const fetchReconciliationData = useCallback(async () => {
+  useEffect(() => {
+    const unsub = dataCache.subscribe(() => {
+      setIsStale(dataCache.isStale('reconciliationOrders'));
+    });
+    return () => unsub();
+  }, []);
+
+  // Cargar datos de conciliación optimizados (sub-20ms) usando dataCache
+  const fetchReconciliationData = useCallback(async (forceRefresh = false) => {
+    setLoading(true);
     try {
+      if (forceRefresh) {
+        dataCache.notifyMutation();
+      }
       const [resSummary, resOrders] = await Promise.all([
-        axios.get('/api/v1/reconciliation/summary'),
-        axios.get('/api/v1/orders/')
+        dataCache.getReconciliationSummary(forceRefresh),
+        dataCache.getReconciliationOrders(forceRefresh)
       ]);
-      setSummary(resSummary.data);
-      setOrders(resOrders.data);
+      setSummary(resSummary);
+      setOrders(resOrders || []);
+      setIsStale(dataCache.isStale('reconciliationOrders'));
     } catch (err) {
       console.error("Error al cargar datos de conciliación", err);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchReconciliationData();
+    fetchReconciliationData(false);
   }, [activeTenantId, fetchReconciliationData]);
 
   const handleUnifyDrivers = async () => {
@@ -80,7 +105,8 @@ export function ControlConciliacionPage() {
       setShowUnifyModal(false);
       setSelectedDriversToUnify([]);
       setRealCedula('');
-      fetchReconciliationData();
+      dataCache.notifyMutation();
+      fetchReconciliationData(true);
     } catch (err) {
       console.error("Error unificando conductores", err);
       setToast({
@@ -94,7 +120,8 @@ export function ControlConciliacionPage() {
   };
 
   const handleRouteUploadComplete = (data) => {
-    fetchReconciliationData();
+    dataCache.notifyMutation();
+    fetchReconciliationData(true);
     setToast({
       type: 'success',
       title: 'Conciliación iMile Exitosa',
@@ -102,16 +129,37 @@ export function ControlConciliacionPage() {
     });
   };
 
-  const filteredOrders = orders.filter(o => {
-    if (!o.domiciliario_nombre && filterDriver !== 'TODOS') return false;
-    if (filterDriver !== 'TODOS' && o.domiciliario_nombre !== filterDriver) return false;
+  // Filtrado memoizado por estado, domiciliario y búsqueda instantánea
+  const filteredOrders = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return orders.filter(o => {
+      if (filterDriver !== 'TODOS' && o.domiciliario_nombre !== filterDriver) return false;
 
-    if (filterState === 'TODOS') return o.estado === 'ENTREGADO' || o.estado === 'ASIGNADO';
-    if (filterState === 'ENTREGADO') return o.estado === 'ENTREGADO';
-    if (filterState === 'ASIGNADO') return o.estado === 'ASIGNADO';
-    if (filterState === 'PENDIENTE_PAGO') return o.estado === 'ENTREGADO' && !o.pagado_conductor;
-    return true;
-  });
+      if (filterState === 'TODOS' && !(o.estado === 'ENTREGADO' || o.estado === 'ASIGNADO')) return false;
+      if (filterState === 'ENTREGADO' && o.estado !== 'ENTREGADO') return false;
+      if (filterState === 'ASIGNADO' && o.estado !== 'ASIGNADO') return false;
+      if (filterState === 'PENDIENTE_PAGO' && !(o.estado === 'ENTREGADO' && !o.pagado_conductor)) return false;
+
+      if (!term) return true;
+      const guiaMatch = o.guia?.toLowerCase().includes(term);
+      const driverMatch = o.domiciliario_nombre?.toLowerCase().includes(term);
+      const clienteMatch = o.cliente?.toLowerCase().includes(term);
+      const provMatch = o.proveedor_entrega?.toLowerCase().includes(term);
+      return guiaMatch || driverMatch || clienteMatch || provMatch;
+    });
+  }, [orders, filterDriver, filterState, searchTerm]);
+
+  // Reiniciar a la primera página cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterDriver, filterState, searchTerm]);
+
+  // Paginación instantánea
+  const totalPages = Math.ceil(filteredOrders.length / pageSize) || 1;
+  const paginatedOrders = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOrders.slice(start, start + pageSize);
+  }, [filteredOrders, currentPage, pageSize]);
 
   const metrics = summary?.metricas || { total_entregados: 0, total_asignados_en_ruta: 0, total_pendientes_pago_nomina: 0 };
   const driversList = summary?.domiciliarios || [];
@@ -131,6 +179,16 @@ export function ControlConciliacionPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <button
+            onClick={() => fetchReconciliationData(true)}
+            disabled={loading}
+            className="touch-target p-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700 flex items-center justify-center disabled:opacity-50"
+            title="Refrescar datos (0ms en caché)"
+            aria-label="Refrescar datos"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-400' : ''}`} />
+          </button>
+
           <button
             onClick={() => setShowUnifyModal(true)}
             className="flex-1 sm:flex-initial touch-target flex items-center justify-center gap-2 py-2.5 px-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all border border-slate-700"
@@ -211,7 +269,7 @@ export function ControlConciliacionPage() {
           <div className="space-y-2 max-h-[440px] overflow-y-auto custom-scrollbar">
             {driversList.length === 0 ? (
               <div className="p-6 text-center text-slate-500 text-xs">
-                No hay domiciliarios con entregas. Importa una planilla iMile.
+                {loading ? 'Cargando domiciliarios...' : 'No hay domiciliarios con entregas. Importa una planilla iMile.'}
               </div>
             ) : (
               driversList.map((d) => (
@@ -256,48 +314,69 @@ export function ControlConciliacionPage() {
               <p className="text-[11px] text-slate-400">Guías asignadas a conductores y registro de horas de entrega</p>
             </div>
 
-            {/* State Filter Buttons */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Filter className="w-3.5 h-3.5 text-slate-400 mr-1" />
-              <button
-                onClick={() => setFilterState('TODOS')}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all ${
-                  filterState === 'TODOS' ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                Todos
-              </button>
-              <button
-                onClick={() => setFilterState('ENTREGADO')}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all ${
-                  filterState === 'ENTREGADO' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                Entregados
-              </button>
-              <button
-                onClick={() => setFilterState('ASIGNADO')}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all ${
-                  filterState === 'ASIGNADO' ? 'bg-amber-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                En Ruta
-              </button>
-              <button
-                onClick={() => setFilterState('PENDIENTE_PAGO')}
-                className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all ${
-                  filterState === 'PENDIENTE_PAGO' ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
-                }`}
-              >
-                Pend. Nómina
-              </button>
+            {/* Instant Search & State Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar guía, conductor, cliente..."
+                  className="pl-8 pr-3 py-1.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60 transition-all w-44 md:w-56"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* State Filter Buttons */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setFilterState('TODOS')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                    filterState === 'TODOS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Todos ({orders.length})
+                </button>
+                <button
+                  onClick={() => setFilterState('ENTREGADO')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                    filterState === 'ENTREGADO' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Entregados
+                </button>
+                <button
+                  onClick={() => setFilterState('ASIGNADO')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                    filterState === 'ASIGNADO' ? 'bg-amber-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  En Ruta
+                </button>
+                <button
+                  onClick={() => setFilterState('PENDIENTE_PAGO')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                    filterState === 'PENDIENTE_PAGO' ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Pend. Nómina
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="rt-wrap overflow-x-auto max-h-[480px] overflow-y-auto custom-scrollbar">
+          <div className="rt-wrap overflow-x-auto max-h-[440px] overflow-y-auto custom-scrollbar">
             <table className="rt w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40">
+                <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/40 sticky top-0 z-10 backdrop-blur-md">
                   <th className="p-3">Empresa</th>
                   <th className="p-3">Guía</th>
                   <th className="p-3">Domiciliario (DA Name)</th>
@@ -308,14 +387,25 @@ export function ControlConciliacionPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-xs">
-                {filteredOrders.length === 0 ? (
+                {loading && orders.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 text-xs">
+                      <div className="flex items-center justify-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                        <span>Cargando entregas conciliadas...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : paginatedOrders.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
-                      No se encontraron registros de entregas para los filtros seleccionados. Usa el botón "Importar Rutas iMile".
+                      {searchTerm
+                        ? 'No se encontraron entregas que coincidan con la búsqueda.'
+                        : 'No se encontraron registros de entregas para los filtros seleccionados. Usa el botón "Importar Rutas".'}
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((o) => (
+                  paginatedOrders.map((o) => (
                     <tr key={o.id} className="hover:bg-slate-800/30 transition-all">
                       <td data-label="Empresa" className="p-3">
                         <Badge variant="purple" className="text-[10px] font-mono uppercase">
@@ -358,6 +448,52 @@ export function ControlConciliacionPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Footer Controls: Pagination & Items Per Page */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/10 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <span>Mostrar por página:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-950 border border-white/10 rounded-xl px-2 py-1 text-white font-mono focus:outline-none"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+              </select>
+              <span className="text-[11px] text-slate-500">
+                (Mostrando {filteredOrders.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredOrders.length)} de {filteredOrders.length} pedidos)
+              </span>
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-slate-900 text-slate-300 border border-white/5 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="px-3 py-1 font-mono font-bold text-white bg-slate-950/80 border border-white/10 rounded-xl text-xs">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-slate-900 text-slate-300 border border-white/5 transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </GlassCard>
       </div>

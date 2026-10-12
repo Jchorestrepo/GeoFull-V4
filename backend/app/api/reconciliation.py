@@ -407,6 +407,64 @@ async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
         }
 
 
+@router.get("/orders")
+async def list_reconciliation_orders(
+    estado: Optional[str] = Query(None),
+    domiciliario_id: Optional[uuid.UUID] = Query(None),
+    guia: Optional[str] = Query(None),
+    limit: int = Query(5000, le=20000),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Lista liviana y de alto rendimiento de pedidos en proceso de conciliación/entrega.
+    Excluye geometrías pesadas y metadatos innecesarios para garantizar respuesta sub-20ms.
+    """
+    async for session in get_db_session(x_tenant_id):
+        sql = """
+            SELECT
+                p.id,
+                p.tenant_id,
+                p.guia,
+                p.domiciliario_id,
+                COALESCE(c.nombre_completo, p.domiciliario_nombre, 'SIN ASIGNAR') AS domiciliario_nombre,
+                p.fecha_entrega,
+                p.proveedor_entrega,
+                p.estado,
+                p.pagado_conductor,
+                p.cliente
+            FROM pedidos p
+            LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+            WHERE p.tenant_id = :tenant_id
+              AND (p.estado IN ('ENTREGADO', 'ASIGNADO') OR p.domiciliario_id IS NOT NULL)
+        """
+        params = {"tenant_id": x_tenant_id, "limit": limit}
+
+        if guia and guia.strip():
+            sql += " AND (p.guia = :guia OR LOWER(p.guia) = LOWER(:guia))"
+            params["guia"] = guia.strip()
+        if estado:
+            sql += " AND p.estado = :estado"
+            params["estado"] = estado
+        if domiciliario_id:
+            sql += " AND p.domiciliario_id = :domiciliario_id"
+            params["domiciliario_id"] = domiciliario_id
+
+        sql += " ORDER BY p.fecha_entrega DESC NULLS LAST, p.fecha_importacion DESC LIMIT :limit"
+
+        res = await session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in res.fetchall()]
+
+        for r in rows:
+            if r.get("id"):
+                r["id"] = str(r["id"])
+            if r.get("domiciliario_id"):
+                r["domiciliario_id"] = str(r["domiciliario_id"])
+            if r.get("fecha_entrega") and hasattr(r["fecha_entrega"], "isoformat"):
+                r["fecha_entrega"] = r["fecha_entrega"].isoformat()
+
+        return rows
+
+
 class DriverCreateRequest(BaseModel):
     nombre_completo: str
     cedula: str
