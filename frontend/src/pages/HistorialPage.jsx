@@ -32,7 +32,9 @@ import {
   Database,
   Eye,
   CornerDownRight,
-  Hash
+  Hash,
+  ChevronDown,
+  ChevronsUpDown
 } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
@@ -49,9 +51,36 @@ export function HistorialPage() {
   const [loadingBatch, setLoadingBatch] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [filterText, setFilterText] = useState('');
-  const [activeTab, setActiveTab] = useState('datos'); // 'datos' | 'historial' | 'todo'
   const [extraDataSearch, setExtraDataSearch] = useState('');
   const [toast, setToast] = useState(null);
+
+  // Estado de secciones colapsables (Línea de tiempo abierta de primera por defecto)
+  const [openSections, setOpenSections] = useState({
+    trazabilidad: true,
+    destinatario: false,
+    georreferenciacion: false,
+    operacion: false,
+    datos_extra: false,
+  });
+
+  const toggleSection = (key) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const areAllOpen = Object.values(openSections).every(Boolean);
+  const toggleAllSections = () => {
+    const nextState = !areAllOpen;
+    setOpenSections({
+      destinatario: nextState,
+      georreferenciacion: nextState,
+      operacion: nextState,
+      datos_extra: nextState,
+      trazabilidad: nextState,
+    });
+  };
 
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -637,296 +666,511 @@ export function HistorialPage() {
                     </span>
                   </div>
                 </div>
-
-                {/* Control Segmentado de Pestañas (Apple Style) */}
-                <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-2xl border border-white/10 overflow-x-auto">
-                  <button
-                    onClick={() => setActiveTab('datos')}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                      activeTab === 'datos'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    Datos Asociados a la Guía
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('historial')}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                      activeTab === 'historial'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    Trazabilidad
-                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300">
-                      {orderDetail.historial.length}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveTab('todo')}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                      activeTab === 'todo'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Vista Completa
-                  </button>
-                </div>
               </GlassCard>
 
-              {/* CONTENIDO 1: DATOS ASOCIADOS (Si activeTab === 'datos' o 'todo') */}
-              {(activeTab === 'datos' || activeTab === 'todo') && (
-                <div className="space-y-4">
-                  {/* Alerta de rango lógico si existe */}
-                  {pedido.alerta_rango_logico && (
-                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-bold text-amber-300 block">Alerta de Rango Lógico Detectada</span>
-                        <p className="text-amber-200/80 mt-0.5">
-                          {pedido.detalle_alerta_rango || 'La numeración de placa excede los rangos catastrales normales de la vía.'}
-                        </p>
+              {/* Barra de Control de Acordeones / Menús Plegables */}
+              <div className="flex items-center justify-between px-1 pt-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-blue-400" />
+                  Vista Completa • Toca cada menú para desplegar
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleAllSections}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/60 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/5 transition-all cursor-pointer active:scale-95 shadow-sm"
+                >
+                  <ChevronsUpDown className="w-3.5 h-3.5 text-blue-400" />
+                  {areAllOpen ? 'Colapsar Todo' : 'Desplegar Todo'}
+                </button>
+              </div>
+
+              {/* Lista Unificada de Menús Colapsables */}
+              <div className="space-y-3">
+                {/* 1. Línea de Tiempo del Historial de Seguimiento (Estilo JMS) - Siempre arriba y desplegado por defecto */}
+                <GlassCard className="p-0 overflow-hidden border border-white/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('trazabilidad')}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-200 group-hover:text-white transition-colors block">
+                          Línea de Tiempo del Historial de Seguimiento (JMS)
+                        </span>
+                        {!openSections.trazabilidad && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {orderDetail.historial.length} eventos registrados cronológicamente
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="titanium" className="text-[10px]">
+                        {orderDetail.historial.length} Eventos
+                      </Badge>
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform duration-300 ${
+                          openSections.trazabilidad ? 'rotate-180 text-blue-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
+
+                  {openSections.trazabilidad && (
+                    <div className="border-t border-white/5 bg-slate-950/20">
+                      <div className="overflow-x-auto rt-wrap">
+                        <table className="w-full text-left text-xs border-collapse rt">
+                          <thead>
+                            <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                              <th className="py-3 px-4 w-12 text-center">N.°</th>
+                              <th className="py-3 px-4 w-44">Fecha y Hora</th>
+                              <th className="py-3 px-4 w-36">Tipo de Escaneo</th>
+                              <th className="py-3 px-4 w-44">Operador / Usuario</th>
+                              <th className="py-3 px-4 min-w-[320px]">Descripción del Historial de Seguimiento</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {orderDetail.historial.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="py-8 text-center text-slate-500">
+                                  No hay eventos registrados para esta guía.
+                                </td>
+                              </tr>
+                            ) : (
+                              orderDetail.historial.map((ev, index) => {
+                                const num = index + 1;
+                                const isLast = index === orderDetail.historial.length - 1;
+                                return (
+                                  <tr
+                                    key={ev.id || index}
+                                    className={`transition-colors hover:bg-slate-800/40 ${
+                                      isLast ? 'bg-blue-500/5' : ''
+                                    }`}
+                                  >
+                                    {/* N.° */}
+                                    <td data-label="N.°" className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
+                                      {num}
+                                    </td>
+
+                                    {/* Hora de Escaneo */}
+                                    <td data-label="Fecha y Hora" className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                                      {formatDateTime(ev.fecha)}
+                                    </td>
+
+                                    {/* Tipo de Escaneo */}
+                                    <td data-label="Tipo" className="py-3 px-4 whitespace-nowrap">
+                                      <span className="inline-flex items-center gap-1 font-semibold text-slate-200">
+                                        {ev.tipo_evento === 'ENTREGADO' && (
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                        )}
+                                        {ev.tipo_evento === 'EN_RUTA' && (
+                                          <Truck className="w-3.5 h-3.5 text-blue-400" />
+                                        )}
+                                        {ev.tipo_evento === 'INGRESO_BODEGA' && (
+                                          <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                                        )}
+                                        {ev.tipo_evento === 'REUBICACION_BODEGA' && (
+                                          <Layers className="w-3.5 h-3.5 text-amber-400" />
+                                        )}
+                                        {ev.tipo_evento === 'SECTORIZACION_ESCANEO' && (
+                                          <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                                        )}
+                                        {ev.tipo_evento === 'REASIGNACION_ZONA' && (
+                                          <Layers className="w-3.5 h-3.5 text-purple-400" />
+                                        )}
+                                        {ev.tipo_evento === 'IMPORTACION' && (
+                                          <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                        )}
+                                        <span className="text-[11px]">
+                                          {ev.tipo_evento === 'SECTORIZACION_ESCANEO' ? 'SECTORIZADO (ESCÁNER)' : ev.tipo_evento}
+                                        </span>
+                                      </span>
+                                    </td>
+
+                                    {/* Operador de Escáner / Usuario */}
+                                    <td data-label="Operador" className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-white/5 font-medium text-slate-200">
+                                        {ev.usuario_nombre || 'Sistema'}
+                                      </span>
+                                    </td>
+
+                                    {/* Descripción Enriquecida Estilo JMS */}
+                                    <td data-label="Descripción" className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
+                                      {renderDescripcionJMS(ev.descripcion)}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )}
+                </GlassCard>
 
-                  {/* Grupo 1: Información del Destinatario & Paquete */}
-                  <GlassCard className="p-4 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
-                      <User className="w-3.5 h-3.5 text-blue-400" />
-                      Destinatario & Contacto
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Nombre del Destinatario
-                        </span>
-                        <p className="text-slate-100 font-semibold text-sm">
-                          {pedido.cliente || 'No especificado'}
-                        </p>
+                {/* 2. Destinatario & Contacto */}
+                <GlassCard className="p-0 overflow-hidden border border-white/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('destinatario')}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0">
+                        <User className="w-4 h-4" />
                       </div>
-
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Teléfono de Contacto
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-200 group-hover:text-white transition-colors block">
+                          Destinatario & Contacto
                         </span>
-                        <div className="flex items-center justify-between">
-                          <p className="text-slate-100 font-mono font-semibold">
-                            {pedido.telefono_cliente || 'No registrado'}
+                        {!openSections.destinatario && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {pedido.cliente || 'Destinatario no especificado'}
+                            {pedido.telefono_cliente && ` • Tel: ${pedido.telefono_cliente}`}
                           </p>
-                          {pedido.telefono_cliente && (
-                            <button
-                              onClick={() => handleCopiar(pedido.telefono_cliente, 'Teléfono')}
-                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-                              title="Copiar teléfono"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Observaciones / Complemento de Entrega
-                        </span>
-                        <p className="text-slate-200">
-                          {pedido.observaciones_entrega || pedido.complemento || 'Sin observaciones registradas'}
-                        </p>
+                        )}
                       </div>
                     </div>
-                  </GlassCard>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform duration-300 ${
+                          openSections.destinatario ? 'rotate-180 text-blue-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
 
-                  {/* Grupo 2: Georreferenciación & Normalización Catastral */}
-                  <GlassCard className="p-4 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
-                      <Compass className="w-3.5 h-3.5 text-emerald-400" />
-                      Georreferenciación & Normalización de Dirección
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Dirección Original (Declarada)
-                        </span>
-                        <p className="text-slate-300 font-mono break-words">
-                          {pedido.direccion_original}
-                        </p>
-                      </div>
-
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Dirección Limpia (Normalizada GeoFull)
-                        </span>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-emerald-300 font-mono font-bold break-words">
-                            {pedido.direccion_limpia || '---'}
+                  {openSections.destinatario && (
+                    <div className="border-t border-white/5 p-4 bg-slate-950/20 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Nombre del Destinatario
+                          </span>
+                          <p className="text-slate-100 font-semibold text-sm">
+                            {pedido.cliente || 'No especificado'}
                           </p>
-                          {pedido.direccion_limpia && (
-                            <button
-                              onClick={() => handleCopiar(pedido.direccion_limpia, 'Dirección Limpia')}
-                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0"
-                              title="Copiar dirección limpia"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          )}
                         </div>
-                      </div>
 
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Coordenadas Geográficas
-                        </span>
-                        <div className="flex items-center justify-between">
-                          <p className="text-slate-200 font-mono text-[11px]">
-                            {pedido.latitud && pedido.longitud
-                              ? `${pedido.latitud}, ${pedido.longitud}`
-                              : 'No georreferenciado'}
-                          </p>
-                          {pedido.latitud && pedido.longitud && (
-                            <div className="flex items-center gap-1">
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Teléfono de Contacto
+                          </span>
+                          <div className="flex items-center justify-between">
+                            <p className="text-slate-100 font-mono font-semibold">
+                              {pedido.telefono_cliente || 'No registrado'}
+                            </p>
+                            {pedido.telefono_cliente && (
                               <button
-                                onClick={() => handleCopiar(`${pedido.latitud}, ${pedido.longitud}`, 'Coordenadas')}
+                                onClick={() => handleCopiar(pedido.telefono_cliente, 'Teléfono')}
                                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-                                title="Copiar coordenadas"
+                                title="Copiar teléfono"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Calidad de Geocodificación
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="titanium" className="text-[10px]">
-                            {pedido.nivel_precision || 'Desconocido'}
-                          </Badge>
-                          {pedido.precision_metros && (
-                            <span className="text-slate-300 font-mono text-[11px]">
-                              Margen: {pedido.precision_metros}m
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Clave Catastral / Normalización
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-slate-200 font-bold">
-                            {pedido.clave_direccion || '---'}
+                        <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Observaciones / Complemento de Entrega
                           </span>
-                          {pedido.estado_normalizacion && (
-                            <Badge 
-                              variant={pedido.estado_normalizacion === 'OK' ? 'emerald' : 'amber'} 
-                              className="text-[10px]"
-                            >
-                              Estado: {pedido.estado_normalizacion}
-                            </Badge>
-                          )}
+                          <p className="text-slate-200">
+                            {pedido.observaciones_entrega || pedido.complemento || 'Sin observaciones registradas'}
+                          </p>
                         </div>
                       </div>
+                    </div>
+                  )}
+                </GlassCard>
 
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Zona de Reparto Asignada
+                {/* 3. Georreferenciación & Normalización Catastral */}
+                <GlassCard className="p-0 overflow-hidden border border-white/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('georreferenciacion')}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0">
+                        <Compass className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-200 group-hover:text-white transition-colors block">
+                          Georreferenciación & Normalización de Dirección
                         </span>
-                        <div className="flex items-center gap-1.5 text-blue-400 font-bold">
-                          <MapPin className="w-3.5 h-3.5" />
-                          <span>{pedido.zona_nombre || 'Sin Zona (Fuera de cobertura)'}</span>
-                        </div>
+                        {!openSections.georreferenciacion && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {pedido.zona_nombre || 'Sin Zona'} • {pedido.direccion_limpia || pedido.direccion_original}
+                          </p>
+                        )}
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform duration-300 ${
+                          openSections.georreferenciacion ? 'rotate-180 text-emerald-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
 
-                      {pedido.advertencias_normalizacion?.length > 0 && (
-                        <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1.5">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                            <Info className="w-3 h-3" />
-                            Ajustes del Motor de Normalización
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {pedido.advertencias_normalizacion.map((adv, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]"
-                              >
-                                {adv}
-                              </span>
-                            ))}
+                  {openSections.georreferenciacion && (
+                    <div className="border-t border-white/5 p-4 bg-slate-950/20 space-y-3">
+                      {pedido.alerta_rango_logico && (
+                        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-amber-300 block">Alerta de Rango Lógico Detectada</span>
+                            <p className="text-amber-200/80 mt-0.5">
+                              {pedido.detalle_alerta_rango || 'La numeración de placa excede los rangos catastrales normales de la vía.'}
+                            </p>
                           </div>
                         </div>
                       )}
-                    </div>
-                  </GlassCard>
 
-                  {/* Grupo 3: Operación Logística & Liquidación */}
-                  <GlassCard className="p-4 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
-                      <Truck className="w-3.5 h-3.5 text-amber-400" />
-                      Operación Logística & Fechas
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Proveedor Logístico
-                        </span>
-                        <p className="text-slate-100 font-semibold">
-                          {pedido.proveedor_entrega || 'iMile'}
-                        </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Dirección Original (Declarada)
+                          </span>
+                          <p className="text-slate-300 font-mono break-words">
+                            {pedido.direccion_original}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Dirección Limpia (Normalizada GeoFull)
+                          </span>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-emerald-300 font-mono font-bold break-words">
+                              {pedido.direccion_limpia || '---'}
+                            </p>
+                            {pedido.direccion_limpia && (
+                              <button
+                                onClick={() => handleCopiar(pedido.direccion_limpia, 'Dirección Limpia')}
+                                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0"
+                                title="Copiar dirección limpia"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Coordenadas Geográficas
+                          </span>
+                          <div className="flex items-center justify-between">
+                            <p className="text-slate-200 font-mono text-[11px]">
+                              {pedido.latitud && pedido.longitud
+                                ? `${pedido.latitud}, ${pedido.longitud}`
+                                : 'No georreferenciado'}
+                            </p>
+                            {pedido.latitud && pedido.longitud && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleCopiar(`${pedido.latitud}, ${pedido.longitud}`, 'Coordenadas')}
+                                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                                  title="Copiar coordenadas"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Calidad de Geocodificación
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="titanium" className="text-[10px]">
+                              {pedido.nivel_precision || 'Desconocido'}
+                            </Badge>
+                            {pedido.precision_metros && (
+                              <span className="text-slate-300 font-mono text-[11px]">
+                                Margen: {pedido.precision_metros}m
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Clave Catastral / Normalización
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-200 font-bold">
+                              {pedido.clave_direccion || '---'}
+                            </span>
+                            {pedido.estado_normalizacion && (
+                              <Badge 
+                                variant={pedido.estado_normalizacion === 'OK' ? 'emerald' : 'amber'} 
+                                className="text-[10px]"
+                              >
+                                Estado: {pedido.estado_normalizacion}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Zona de Reparto Asignada
+                          </span>
+                          <div className="flex items-center gap-1.5 text-blue-400 font-bold">
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{pedido.zona_nombre || 'Sin Zona (Fuera de cobertura)'}</span>
+                          </div>
+                        </div>
+
+                        {pedido.advertencias_normalizacion?.length > 0 && (
+                          <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                              <Info className="w-3 h-3" />
+                              Ajustes del Motor de Normalización
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {pedido.advertencias_normalizacion.map((adv, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]"
+                                >
+                                  {adv}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
+                    </div>
+                  )}
+                </GlassCard>
 
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Liquidación Conductor
+                {/* 4. Operación Logística & Liquidación */}
+                <GlassCard className="p-0 overflow-hidden border border-white/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('operacion')}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+                        <Truck className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-200 group-hover:text-white transition-colors block">
+                          Operación Logística & Liquidación
                         </span>
-                        <div>
-                          {pedido.pagado_conductor ? (
-                            <Badge variant="emerald" className="text-[10px]">Liquidado / Pagado</Badge>
-                          ) : (
-                            <Badge variant="amber" className="text-[10px]">Pendiente de Liquidar</Badge>
-                          )}
+                        {!openSections.operacion && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {pedido.proveedor_entrega || 'Courier'} • {pedido.domiciliario_nombre || 'Sin Conductor'} • {pedido.pagado_conductor ? 'Liquidado' : 'Pendiente liquidar'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform duration-300 ${
+                          openSections.operacion ? 'rotate-180 text-amber-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
+
+                  {openSections.operacion && (
+                    <div className="border-t border-white/5 p-4 bg-slate-950/20 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Proveedor Logístico
+                          </span>
+                          <p className="text-slate-100 font-semibold">
+                            {pedido.proveedor_entrega || 'iMile'}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Liquidación Conductor
+                          </span>
+                          <div>
+                            {pedido.pagado_conductor ? (
+                              <Badge variant="emerald" className="text-[10px]">Liquidado / Pagado</Badge>
+                            ) : (
+                              <Badge variant="amber" className="text-[10px]">Pendiente de Liquidar</Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Fecha de Importación
+                          </span>
+                          <p className="text-slate-300 font-mono text-[11px]">
+                            {formatDateTime(pedido.fecha_importacion)}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Fecha de Entrega
+                          </span>
+                          <p className="text-slate-300 font-mono text-[11px]">
+                            {formatDateTime(pedido.fecha_entrega)}
+                          </p>
                         </div>
                       </div>
+                    </div>
+                  )}
+                </GlassCard>
 
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Fecha de Importación
-                        </span>
-                        <p className="text-slate-300 font-mono text-[11px]">
-                          {formatDateTime(pedido.fecha_importacion)}
-                        </p>
+                {/* 5. Datos Adicionales del Archivo de Importación (datos_extra) */}
+                <GlassCard className="p-0 overflow-hidden border border-white/10 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('datos_extra')}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 shrink-0">
+                        <Database className="w-4 h-4" />
                       </div>
-
-                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Fecha de Entrega
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-200 group-hover:text-white transition-colors block">
+                          Datos Adicionales del Archivo Fuente
                         </span>
-                        <p className="text-slate-300 font-mono text-[11px]">
-                          {formatDateTime(pedido.fecha_entrega)}
-                        </p>
+                        {!openSections.datos_extra && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {Object.keys(pedido.datos_extra || {}).length} atributos importados
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </GlassCard>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="slate" className="text-[10px]">
+                        {Object.keys(pedido.datos_extra || {}).length} Atributos
+                      </Badge>
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 group-hover:text-white transition-transform duration-300 ${
+                          openSections.datos_extra ? 'rotate-180 text-purple-400' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
 
-                  {/* Grupo 4: Datos Adicionales del Archivo de Importación (datos_extra) */}
-                  <GlassCard className="p-4 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                        <Database className="w-3.5 h-3.5 text-blue-400" />
-                        Datos Adicionales del Archivo Fuente ({Object.keys(pedido.datos_extra || {}).length} Atributos)
-                      </h4>
-
+                  {openSections.datos_extra && (
+                    <div className="border-t border-white/5 p-4 bg-slate-950/20 space-y-3">
                       {Object.keys(pedido.datos_extra || {}).length > 6 && (
                         <div className="relative">
                           <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -935,158 +1179,55 @@ export function HistorialPage() {
                             value={extraDataSearch}
                             onChange={(e) => setExtraDataSearch(e.target.value)}
                             placeholder="Buscar en datos..."
-                            className="bg-slate-950/60 border border-white/10 rounded-lg pl-7 pr-2.5 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 w-44"
+                            className="bg-slate-950/60 border border-white/10 rounded-lg pl-7 pr-2.5 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 w-full sm:w-60"
                           />
                         </div>
                       )}
-                    </div>
 
-                    {!pedido.datos_extra || Object.keys(pedido.datos_extra).length === 0 ? (
-                      <p className="text-xs text-slate-500 py-4 text-center">
-                        No se registraron atributos adicionales en el archivo Excel/CSV original de esta guía.
-                      </p>
-                    ) : datosExtraFiltrados.length === 0 ? (
-                      <p className="text-xs text-slate-500 py-3 text-center">
-                        No hay campos que coincidan con la búsqueda "{extraDataSearch}".
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
-                        {datosExtraFiltrados.map(([clave, valor]) => {
-                          const valStr = valor !== null && valor !== undefined ? String(valor) : '---';
-                          return (
-                            <div
-                              key={clave}
-                              className="bg-slate-950/50 p-2.5 rounded-xl border border-white/5 space-y-1 hover:border-blue-500/30 transition-colors group relative"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate pr-1">
-                                  {clave}
-                                </span>
-                                <button
-                                  onClick={() => handleCopiar(valStr, clave)}
-                                  className="text-slate-500 group-hover:text-slate-300 transition-colors p-0.5 rounded"
-                                  title={`Copiar ${clave}`}
-                                >
-                                  <Copy className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                              <p
-                                className="text-xs text-slate-200 font-mono font-medium truncate"
-                                title={valStr}
-                              >
-                                {valStr}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </GlassCard>
-                </div>
-              )}
-
-              {/* CONTENIDO 2: TRAZABILIDAD JMS (Si activeTab === 'historial' o 'todo') */}
-              {(activeTab === 'historial' || activeTab === 'todo') && (
-                <GlassCard className="p-0 overflow-hidden border border-white/10">
-                  <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/50">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-blue-400" />
-                      Línea de Tiempo del Historial de Seguimiento (Estilo JMS)
-                    </h3>
-                    <Badge variant="titanium" className="text-[10px]">
-                      {orderDetail.historial.length} Eventos Cronológicos
-                    </Badge>
-                  </div>
-
-                  <div className="overflow-x-auto rt-wrap">
-                    <table className="w-full text-left text-xs border-collapse rt">
-                      <thead>
-                        <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                          <th className="py-3 px-4 w-12 text-center">N.°</th>
-                          <th className="py-3 px-4 w-44">Fecha y Hora</th>
-                          <th className="py-3 px-4 w-36">Tipo de Escaneo</th>
-                          <th className="py-3 px-4 w-44">Operador / Usuario</th>
-                          <th className="py-3 px-4 min-w-[320px]">Descripción del Historial de Seguimiento</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {orderDetail.historial.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-slate-500">
-                              No hay eventos registrados para esta guía.
-                            </td>
-                          </tr>
-                        ) : (
-                          orderDetail.historial.map((ev, index) => {
-                            const num = index + 1;
-                            const isLast = index === orderDetail.historial.length - 1;
+                      {!pedido.datos_extra || Object.keys(pedido.datos_extra).length === 0 ? (
+                        <p className="text-xs text-slate-500 py-4 text-center">
+                          No se registraron atributos adicionales en el archivo Excel/CSV original de esta guía.
+                        </p>
+                      ) : datosExtraFiltrados.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-3 text-center">
+                          No hay campos que coincidan con la búsqueda "{extraDataSearch}".
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
+                          {datosExtraFiltrados.map(([clave, valor]) => {
+                            const valStr = valor !== null && valor !== undefined ? String(valor) : '---';
                             return (
-                              <tr
-                                key={ev.id || index}
-                                className={`transition-colors hover:bg-slate-800/40 ${
-                                  isLast ? 'bg-blue-500/5' : ''
-                                }`}
+                              <div
+                                key={clave}
+                                className="bg-slate-950/50 p-2.5 rounded-xl border border-white/5 space-y-1 hover:border-blue-500/30 transition-colors group relative"
                               >
-                                {/* N.° */}
-                                <td data-label="N.°" className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
-                                  {num}
-                                </td>
-
-                                {/* Hora de Escaneo */}
-                                <td data-label="Fecha y Hora" className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
-                                  {formatDateTime(ev.fecha)}
-                                </td>
-
-                                {/* Tipo de Escaneo */}
-                                <td data-label="Tipo" className="py-3 px-4 whitespace-nowrap">
-                                  <span className="inline-flex items-center gap-1 font-semibold text-slate-200">
-                                    {ev.tipo_evento === 'ENTREGADO' && (
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                    )}
-                                    {ev.tipo_evento === 'EN_RUTA' && (
-                                      <Truck className="w-3.5 h-3.5 text-blue-400" />
-                                    )}
-                                    {ev.tipo_evento === 'INGRESO_BODEGA' && (
-                                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                                    )}
-                                    {ev.tipo_evento === 'REUBICACION_BODEGA' && (
-                                      <Layers className="w-3.5 h-3.5 text-amber-400" />
-                                    )}
-                                    {ev.tipo_evento === 'SECTORIZACION_ESCANEO' && (
-                                      <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                                    )}
-                                    {ev.tipo_evento === 'REASIGNACION_ZONA' && (
-                                      <Layers className="w-3.5 h-3.5 text-purple-400" />
-                                    )}
-                                    {ev.tipo_evento === 'IMPORTACION' && (
-                                      <FileText className="w-3.5 h-3.5 text-slate-400" />
-                                    )}
-                                    <span className="text-[11px]">
-                                      {ev.tipo_evento === 'SECTORIZACION_ESCANEO' ? 'SECTORIZADO (ESCÁNER)' : ev.tipo_evento}
-                                    </span>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate pr-1">
+                                    {clave}
                                   </span>
-                                </td>
-
-                                {/* Operador de Escáner / Usuario */}
-                                <td data-label="Operador" className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
-                                  <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-white/5 font-medium text-slate-200">
-                                    {ev.usuario_nombre || 'Sistema'}
-                                  </span>
-                                </td>
-
-                                {/* Descripción Enriquecida Estilo JMS */}
-                                <td data-label="Descripción" className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
-                                  {renderDescripcionJMS(ev.descripcion)}
-                                </td>
-                              </tr>
+                                  <button
+                                    onClick={() => handleCopiar(valStr, clave)}
+                                    className="text-slate-500 group-hover:text-slate-300 transition-colors p-0.5 rounded cursor-pointer"
+                                    title={`Copiar ${clave}`}
+                                  >
+                                    <Copy className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                                <p
+                                  className="text-xs text-slate-200 font-mono font-medium truncate"
+                                  title={valStr}
+                                >
+                                  {valStr}
+                                </p>
+                              </div>
                             );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </GlassCard>
-              )}
+              </div>
             </>
           )}
         </div>
