@@ -9,22 +9,37 @@ from app.core.config import settings
 
 
 def hash_password(password: str) -> str:
-    """Genera un hash SHA-256 con salt seguro para contraseñas."""
+    """Genera un hash PBKDF2-HMAC-SHA256 con 100.000 iteraciones y salt criptográfico."""
     salt = os.urandom(16).hex()
-    pwd_bytes = (password + salt).encode('utf-8')
-    key = hashlib.sha256(pwd_bytes).hexdigest()
-    return f"{salt}${key}"
+    key = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100_000
+    ).hex()
+    return f"pbkdf2${salt}${key}"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica si la contraseña coincide con el hash almacenado."""
+    """Verifica la contraseña contra hash PBKDF2 o legado SHA-256."""
     if not hashed_password or '$' not in hashed_password:
         return False
     try:
-        salt, key = hashed_password.split('$', 1)
-        pwd_bytes = (plain_password + salt).encode('utf-8')
-        calc_key = hashlib.sha256(pwd_bytes).hexdigest()
-        return hmac.compare_digest(calc_key, key)
+        if hashed_password.startswith("pbkdf2$"):
+            _, salt, key = hashed_password.split('$', 2)
+            calc_key = hashlib.pbkdf2_hmac(
+                'sha256',
+                plain_password.encode('utf-8'),
+                salt.encode('utf-8'),
+                100_000
+            ).hex()
+            return hmac.compare_digest(calc_key, key)
+        else:
+            # Compatibilidad con hashes legados de 1 sola iteración SHA-256 (salt$key)
+            salt, key = hashed_password.split('$', 1)
+            pwd_bytes = (plain_password + salt).encode('utf-8')
+            calc_key = hashlib.sha256(pwd_bytes).hexdigest()
+            return hmac.compare_digest(calc_key, key)
     except Exception:
         return False
 

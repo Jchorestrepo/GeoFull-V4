@@ -199,15 +199,13 @@ export function BarcodeScannerStation({ onOrderFound }) {
             </div>
             <div>
               <h3 className="font-extrabold text-base text-white flex items-center gap-2">
-                Estación de Escaneo por Voz & Pantalla Gigante
+                Estación de Escaneo
                 <Badge variant="emerald" className="flex items-center gap-1 text-[10px]">
                   <Sparkles className="w-3 h-3 text-emerald-400 fill-emerald-400/20" />
                   Voz Inteligente
                 </Badge>
               </h3>
-              <p className="text-xs text-slate-400">
-                Escanea el código de barras con la pistola USB. El sector se anunciará por voz y se desplegará en pantalla gigante.
-              </p>
+              
             </div>
           </div>
 

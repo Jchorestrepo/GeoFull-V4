@@ -11,12 +11,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
 
-    # Configuración PostgreSQL / PostGIS
+    # Configuración PostgreSQL / PostGIS (Admin / Migraciones)
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgis_secure_pass_2026")
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5433")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "geofull_v4")
+
+    # Usuario de Aplicación (No-Superuser para Aislamiento RLS Estricto)
+    POSTGRES_APP_USER: str = os.getenv("POSTGRES_APP_USER", "geofull_app")
+    POSTGRES_APP_PASSWORD: str = os.getenv("POSTGRES_APP_PASSWORD", "geofull_app_secure_pass_2026")
 
     # Configuración Google OAuth 2.0 & Dominio
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "1047648392019-demo.apps.googleusercontent.com")
@@ -39,9 +43,20 @@ class Settings(BaseSettings):
         return list({e.strip().lower() for e in raw.split(",") if e.strip()})
 
     @property
-    def DATABASE_URL(self) -> str:
+    def ADMIN_DATABASE_URL(self) -> str:
+        """URL de conexión administrativa con superusuario para migraciones DDL."""
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
+    @property
+    def DATABASE_URL(self) -> str:
+        """URL de conexión de la aplicación (usuario geofull_app con RLS estricto)."""
+        user = self.POSTGRES_APP_USER or self.POSTGRES_USER
+        password = self.POSTGRES_APP_PASSWORD or self.POSTGRES_PASSWORD
+        return (
+            f"postgresql+asyncpg://{user}:{password}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 

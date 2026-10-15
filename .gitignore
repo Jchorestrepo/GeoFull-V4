@@ -37,3 +37,8 @@ Thumbs.db
 # Project dynamic data
 backend/data/*
 !backend/data/.gitkeep
+
+# Local Testing & Playwright MCP (No subir a Git)
+.playwright-mcp/
+scripts/
+*.playwright*

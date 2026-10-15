@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import {
   Search,
@@ -17,7 +18,21 @@ import {
   Layers,
   Sparkles,
   ClipboardList,
-  Filter
+  Filter,
+  Phone,
+  Mail,
+  Navigation,
+  Calendar,
+  DollarSign,
+  ShieldCheck,
+  AlertTriangle,
+  Info,
+  Check,
+  Compass,
+  Database,
+  Eye,
+  CornerDownRight,
+  Hash
 } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
@@ -27,15 +42,22 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export function HistorialPage() {
   const [inputText, setInputText] = useState('');
+  const [inputMode, setInputMode] = useState('single'); // 'single' o 'batch'
   const [orderList, setOrderList] = useState([]);
   const [selectedGuia, setSelectedGuia] = useState(null);
   const [orderDetail, setOrderDetail] = useState(null);
   const [loadingBatch, setLoadingBatch] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [filterText, setFilterText] = useState('');
+  const [activeTab, setActiveTab] = useState('datos'); // 'datos' | 'historial' | 'todo'
+  const [extraDataSearch, setExtraDataSearch] = useState('');
   const [toast, setToast] = useState(null);
 
-  const token = localStorage.getItem('token');
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const lastQueriedRef = useRef('');
+
+  const token = localStorage.getItem('v4_token') || localStorage.getItem('token');
   const tenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
 
   const authHeaders = useMemo(() => {
@@ -45,16 +67,16 @@ export function HistorialPage() {
     };
   }, [token, tenantId]);
 
-  // Cargar lote de guías pegadas
-  const handleConsultarGuias = async (e) => {
-    if (e) e.preventDefault();
-    if (!inputText.trim()) {
-      setToast({ type: 'warning', message: 'Pega al menos un número de guía para consultar.' });
+  // Función núcleo de consulta de una o varias guías
+  const consultarGuias = async (textToQuery) => {
+    const raw = (textToQuery !== undefined ? textToQuery : inputText) || '';
+    if (!raw.trim()) {
+      setToast({ type: 'warning', message: 'Ingresa al menos un número de guía para consultar.' });
       return;
     }
 
     // Extraer guías separadas por salto de línea, espacios, tabulación o coma
-    const parsedGuias = inputText
+    const parsedGuias = raw
       .split(/[\r\n,;\t ]+/)
       .map((g) => g.trim())
       .filter((g) => g.length > 0);
@@ -80,12 +102,17 @@ export function HistorialPage() {
         const primeraGuia = items[0].guia;
         setSelectedGuia(primeraGuia);
         cargarDetalleGuia(primeraGuia);
-        setToast({ type: 'success', message: `${items.length} guías procesadas para rastreo.` });
+        setToast({ 
+          type: 'success', 
+          message: items.length === 1 
+            ? `Guía ${primeraGuia} consultada exitosamente.` 
+            : `${items.length} guías procesadas para rastreo.` 
+        });
       } else {
         setToast({ type: 'warning', message: 'No se encontraron registros.' });
       }
     } catch (err) {
-      console.error('Error al consultar lote de guías:', err);
+      console.error('Error al consultar guías:', err);
       setToast({
         type: 'error',
         message: err.response?.data?.detail || 'Error al consultar las guías en el servidor.'
@@ -94,6 +121,38 @@ export function HistorialPage() {
       setLoadingBatch(false);
     }
   };
+
+  // Cargar lote o guía individual desde formulario manual
+  const handleConsultarGuias = (e) => {
+    if (e) e.preventDefault();
+    consultarGuias(inputText);
+  };
+
+  // Escuchar parámetros de URL o navegación provenientes del buscador global superior
+  useEffect(() => {
+    const qParam = searchParams.get('q') || searchParams.get('guia') || searchParams.get('guias');
+    const stateText = location.state?.inputText;
+    const targetText = stateText || qParam;
+
+    if (targetText && typeof targetText === 'string' && targetText.trim()) {
+      const cleanVal = targetText.trim();
+      const queryKey = `${cleanVal}_${location.state?.timestamp || ''}`;
+      if (lastQueriedRef.current === queryKey) return;
+      lastQueriedRef.current = queryKey;
+
+      setInputText(cleanVal);
+
+      // Si vienen múltiples guías, cambiar a pestaña de lote
+      const tokens = cleanVal.split(/[\r\n,;\t ]+/).filter(Boolean);
+      if (tokens.length > 1) {
+        setInputMode('batch');
+      } else {
+        setInputMode('single');
+      }
+
+      consultarGuias(cleanVal);
+    }
+  }, [searchParams, location.state]);
 
   // Cargar ficha y trazabilidad de una guía individual
   const cargarDetalleGuia = async (guia) => {
@@ -130,13 +189,14 @@ export function HistorialPage() {
     setSelectedGuia(null);
     setOrderDetail(null);
     setFilterText('');
+    setExtraDataSearch('');
   };
 
-  // Copiar guía al portapapeles
-  const handleCopiar = (txt) => {
+  // Copiar texto al portapapeles
+  const handleCopiar = (txt, label = 'Texto') => {
     if (!txt) return;
-    navigator.clipboard.writeText(txt);
-    setToast({ type: 'success', message: `Guía ${txt} copiada al portapapeles.` });
+    navigator.clipboard.writeText(String(txt));
+    setToast({ type: 'success', message: `${label} copiado al portapapeles.` });
   };
 
   // Filtrar lista lateral
@@ -150,6 +210,17 @@ export function HistorialPage() {
         (o.zona_nombre && o.zona_nombre.toLowerCase().includes(q))
     );
   }, [orderList, filterText]);
+
+  // Filtrar datos_extra
+  const datosExtraFiltrados = useMemo(() => {
+    if (!orderDetail?.pedido?.datos_extra) return [];
+    const entries = Object.entries(orderDetail.pedido.datos_extra);
+    if (!extraDataSearch.trim()) return entries;
+    const q = extraDataSearch.toLowerCase();
+    return entries.filter(([k, v]) => 
+      k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
+    );
+  }, [orderDetail, extraDataSearch]);
 
   // Formateador de fechas
   const formatDateTime = (isoStr) => {
@@ -166,7 +237,7 @@ export function HistorialPage() {
         hour12: false
       });
     } catch {
-      return isoStr;
+      return String(isoStr);
     }
   };
 
@@ -183,6 +254,10 @@ export function HistorialPage() {
         return <Badge variant="amber">En Bodega</Badge>;
       case 'SECTORIZADO':
         return <Badge variant="titanium">Sectorizado</Badge>;
+      case 'REQUIERE_REVISIÓN':
+        return <Badge variant="amber">Requiere Revisión</Badge>;
+      case 'FUERA_DE_ZONA':
+        return <Badge variant="red">Fuera de Zona</Badge>;
       case 'NO_REGISTRADO':
         return <Badge variant="slate">No Registrada</Badge>;
       default:
@@ -193,7 +268,6 @@ export function HistorialPage() {
   // Renderizar descripción con tags de corchetes estilo JMS destacados
   const renderDescripcionJMS = (texto) => {
     if (!texto) return '---';
-    // Dividir por corchetes 【...】 para aplicar color titanio y negrilla
     const parts = texto.split(/(【[^】]+】)/g);
     return (
       <span>
@@ -215,17 +289,19 @@ export function HistorialPage() {
     );
   };
 
+  const pedido = orderDetail?.pedido;
+
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
+      {/* Encabezado Principal */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
             <ClipboardList className="w-6 h-6 text-blue-400" />
-            Historial & Rastreo Unificado
+            Historial, Rastreo & Datos de la Guía
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Consulta individual o pegado masivo de guías con línea de tiempo y trazabilidad completa de eventos (Estilo JMS).
+            Consulta individual o pegado masivo de guías con ficha técnica detallada, atributos asociados y línea de tiempo JMS.
           </p>
         </div>
 
@@ -233,7 +309,7 @@ export function HistorialPage() {
           {orderList.length > 0 && (
             <button
               onClick={handleLimpiarTodo}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors border border-white/5"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors border border-white/5 active:scale-95"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Limpiar Consulta
@@ -245,55 +321,117 @@ export function HistorialPage() {
         </div>
       </div>
 
-      {/* Layout Principal: 2 Columnas (Panel Izquierdo Multiguía + Panel Derecho Detalle JMS) */}
+      {/* Layout Principal: 2 Columnas (Panel Izquierdo Multiguía + Panel Derecho Detalle & Datos) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* PANEL IZQUIERDO: Pegado múltiple + Lista de Órdenes */}
+        {/* PANEL IZQUIERDO: Consulta & Lista de Guías */}
         <div className="lg:col-span-4 space-y-4">
-          {/* Tarjeta de Entrada de Guías */}
+          {/* Tarjeta de Entrada */}
           <GlassCard className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Copy className="w-3.5 h-3.5 text-blue-400" />
-                Pegar Guías (Multiconsulta)
+            {/* Selector de Modo: Guía Única vs Lote */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Search className="w-3.5 h-3.5 text-blue-400" />
+                Consultar Guías
               </span>
-              <span className="text-[10px] text-slate-500">Salto de línea, coma o espacio</span>
+
+              <div className="flex items-center bg-slate-950/80 p-0.5 rounded-xl border border-white/10 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setInputMode('single')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    inputMode === 'single'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Individual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode('batch')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                    inputMode === 'batch'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Lote Masivo
+                </button>
+              </div>
             </div>
 
-            <textarea
-              rows={4}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Pega aquí múltiples guías...&#10;JTC000173183155&#10;JTC000181825320&#10;JTC000184620980"
-              className="w-full bg-slate-950/70 border border-white/10 rounded-2xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 font-mono transition-all resize-none shadow-inner"
-            />
-
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={handleConsultarGuias}
-                disabled={loadingBatch || !inputText.trim()}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all shadow-lg shadow-blue-500/20"
-              >
-                {loadingBatch ? (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                    Consultando...
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-3.5 h-3.5" />
-                    Consultar Guías
-                  </>
-                )}
-              </button>
-            </div>
+            {inputMode === 'single' ? (
+              <form onSubmit={handleConsultarGuias} className="space-y-3">
+                <div className="relative">
+                  <Hash className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="Ingresa el número de guía (Ej: 6080126004088)..."
+                    className="w-full bg-slate-950/70 border border-white/10 rounded-2xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 font-mono transition-all shadow-inner"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loadingBatch || !inputText.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all shadow-lg shadow-blue-500/20"
+                >
+                  {loadingBatch ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                      Consultando...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-3.5 h-3.5" />
+                      Consultar Guía
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Pega múltiples códigos</span>
+                  <span className="text-[10px] text-slate-500">Salto de línea, coma o espacio</span>
+                </div>
+                <textarea
+                  rows={4}
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder="Pega aquí múltiples guías...&#10;6080126004088&#10;6080926719711&#10;JTC000184620980"
+                  className="w-full bg-slate-950/70 border border-white/10 rounded-2xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 font-mono transition-all resize-none shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={handleConsultarGuias}
+                  disabled={loadingBatch || !inputText.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all shadow-lg shadow-blue-500/20"
+                >
+                  {loadingBatch ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                      Consultando Lote...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-3.5 h-3.5" />
+                      Consultar Guías
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </GlassCard>
 
-          {/* Tarjeta: Lista de Órdenes (Estilo Menú Lateral JMS) */}
+          {/* Tarjeta: Lista de Órdenes Consultadas */}
           <GlassCard className="p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-blue-400" />
-                Lista de Órdenes ({guiasFiltradas.length})
+                Guías Consultadas ({guiasFiltradas.length})
               </span>
             </div>
 
@@ -305,14 +443,14 @@ export function HistorialPage() {
                   type="text"
                   value={filterText}
                   onChange={(e) => setFilterText(e.target.value)}
-                  placeholder="Filtrar por guía o zona..."
+                  placeholder="Filtrar por guía, cliente o zona..."
                   className="w-full bg-slate-950/50 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
                 />
               </div>
             )}
 
             {/* Listado de Guías */}
-            <div className="max-h-[500px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+            <div className="max-h-[460px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
               {loadingBatch ? (
                 <div className="py-8 text-center text-xs text-slate-400 animate-pulse">
                   Cargando guías en el servidor...
@@ -320,7 +458,9 @@ export function HistorialPage() {
               ) : orderList.length === 0 ? (
                 <div className="py-8 text-center space-y-2">
                   <FileText className="w-8 h-8 text-slate-600 mx-auto" />
-                  <p className="text-xs text-slate-500">Pega las guías en el cuadro superior para visualizarlas aquí.</p>
+                  <p className="text-xs text-slate-500">
+                    Ingresa o pega números de guía en el cuadro superior para visualizarlas aquí.
+                  </p>
                 </div>
               ) : guiasFiltradas.length === 0 ? (
                 <div className="py-6 text-center text-xs text-slate-500">
@@ -355,7 +495,7 @@ export function HistorialPage() {
                           ) : (
                             <span className="text-slate-500">Sin Zona</span>
                           )}
-                          {item.cliente && <span>• {item.cliente}</span>}
+                          {item.cliente && <span className="truncate">• {item.cliente}</span>}
                         </div>
                       </div>
 
@@ -375,192 +515,578 @@ export function HistorialPage() {
           </GlassCard>
         </div>
 
-        {/* PANEL DERECHO: Detalle Ficha + Tabla Cronológica JMS */}
+        {/* PANEL DERECHO: Detalle Ficha, Datos Asociados & Trazabilidad JMS */}
         <div className="lg:col-span-8 space-y-4">
           {loadingDetail ? (
             <GlassCard className="p-12 text-center space-y-4">
               <RotateCcw className="w-8 h-8 text-blue-400 animate-spin mx-auto" />
-              <p className="text-xs text-slate-400">Consultando historial y trazabilidad de {selectedGuia}...</p>
+              <p className="text-xs text-slate-400">
+                Cargando datos asociados y trazabilidad de {selectedGuia}...
+              </p>
             </GlassCard>
-          ) : !orderDetail ? (
+          ) : !orderDetail || !pedido ? (
             <GlassCard className="p-16 text-center space-y-4">
               <Clock className="w-12 h-12 text-slate-600 mx-auto" />
               <h3 className="text-base font-bold text-white">Ninguna guía seleccionada</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Ingresa una o varias guías en el panel izquierdo y selecciona una orden para desplegar su línea de tiempo cronológica completa.
+                Ingresa una guía en el panel izquierdo para consultar sus datos asociados, georreferenciación, atributos importados y la línea de tiempo completa.
               </p>
             </GlassCard>
           ) : (
             <>
-              {/* Tarjeta Ficha Técnica Resumen */}
+              {/* Tarjeta Cabecera Hero (Apple GlassCard) */}
               <GlassCard className="p-5 space-y-4 border-l-4 border-l-blue-500">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
-                      <Truck className="w-5 h-5" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+                      <Truck className="w-6 h-6" />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-mono font-black text-white tracking-wide">
-                          {orderDetail.pedido.guia}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xl font-mono font-black text-white tracking-wide">
+                          {pedido.guia}
                         </span>
                         <button
-                          onClick={() => handleCopiar(orderDetail.pedido.guia)}
+                          onClick={() => handleCopiar(pedido.guia, 'Número de Guía')}
                           title="Copiar guía"
                           className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        {renderEstadoBadge(orderDetail.pedido.estado)}
+                        {renderEstadoBadge(pedido.estado)}
+                        {pedido.proveedor_entrega && (
+                          <Badge variant="titanium" className="text-[10px]">
+                            {pedido.proveedor_entrega}
+                          </Badge>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {orderDetail.pedido.cliente || 'Destinatario no especificado'} 
-                        {orderDetail.pedido.telefono_cliente && ` • Tel: ${orderDetail.pedido.telefono_cliente}`}
+
+                      <p className="text-xs text-slate-300 mt-1 font-medium">
+                        {pedido.cliente || 'Destinatario no registrado'}
+                        {pedido.telefono_cliente && (
+                          <span className="text-slate-400"> • Tel: {pedido.telefono_cliente}</span>
+                        )}
                       </p>
                     </div>
                   </div>
 
-                  <div className="text-right sm:self-center">
-                    <span className="text-[11px] text-slate-500 block">Total Eventos Registrados</span>
-                    <span className="text-lg font-extrabold text-blue-400">
-                      {orderDetail.historial.length}
-                    </span>
+                  {/* Acciones Rápidas */}
+                  <div className="flex flex-wrap items-center gap-2 sm:self-center">
+                    {pedido.latitud && pedido.longitud && (
+                      <a
+                        href={`https://www.google.com/maps?q=${pedido.latitud},${pedido.longitud}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all hover:scale-105"
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        Ver en Mapa
+                        <ExternalLink className="w-3 h-3 ml-0.5" />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => handleCopiar(pedido.direccion_limpia || pedido.direccion_original, 'Dirección')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/5 transition-all"
+                    >
+                      <Copy className="w-3 h-3" />
+                      Copiar Dir
+                    </button>
                   </div>
                 </div>
 
-                {/* Subdatos clave en Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                  <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5">
+                {/* Métricas / Badges Clave */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-950/40 p-2.5 rounded-2xl border border-white/5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
                       Zona Asignada
                     </span>
-                    <span className="text-white font-semibold flex items-center gap-1.5 mt-1">
+                    <span className="text-white font-semibold flex items-center gap-1 mt-1 truncate">
                       <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                      {orderDetail.pedido.zona_nombre || 'Sin Sectorizar'}
+                      {pedido.zona_nombre || 'Sin Sectorizar'}
                     </span>
                   </div>
 
-                  <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5">
+                  <div className="bg-slate-950/40 p-2.5 rounded-2xl border border-white/5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                      Mensajero / Conductor
+                      Conductor
                     </span>
-                    <span className="text-white font-semibold flex items-center gap-1.5 mt-1">
+                    <span className="text-white font-semibold flex items-center gap-1 mt-1 truncate">
                       <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      {orderDetail.pedido.domiciliario_nombre || 'Sin Conductor Asignado'}
+                      {pedido.domiciliario_nombre || 'Sin Asignar'}
                     </span>
                   </div>
 
-                  <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5">
+                  <div className="bg-slate-950/40 p-2.5 rounded-2xl border border-white/5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                      Dirección Registrada
+                      Precisión Geo
                     </span>
-                    <span className="text-slate-300 font-medium truncate block mt-1" title={orderDetail.pedido.direccion_original}>
-                      {orderDetail.pedido.direccion_original}
+                    <span className="text-white font-semibold flex items-center gap-1 mt-1 truncate">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      {pedido.confianza_score ? `${pedido.confianza_score}%` : '---'}
+                      {pedido.precision_metros && ` (${pedido.precision_metros}m)`}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950/40 p-2.5 rounded-2xl border border-white/5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                      Eventos Registrados
+                    </span>
+                    <span className="text-white font-semibold flex items-center gap-1 mt-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      {orderDetail.historial.length} eventos
                     </span>
                   </div>
                 </div>
+
+                {/* Control Segmentado de Pestañas (Apple Style) */}
+                <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-2xl border border-white/10 overflow-x-auto">
+                  <button
+                    onClick={() => setActiveTab('datos')}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                      activeTab === 'datos'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    Datos Asociados a la Guía
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('historial')}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                      activeTab === 'historial'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    Trazabilidad
+                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300">
+                      {orderDetail.historial.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('todo')}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                      activeTab === 'todo'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Vista Completa
+                  </button>
+                </div>
               </GlassCard>
 
-              {/* TABLA CRONOLÓGICA JMS (Idéntica a la referencia de J&T) */}
-              <GlassCard className="p-0 overflow-hidden border border-white/10">
-                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/50">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-blue-400" />
-                    Línea de Tiempo del Historial de Seguimiento
-                  </h3>
-                  <Badge variant="titanium" className="text-[10px]">
-                    Orden Cronológico
-                  </Badge>
-                </div>
+              {/* CONTENIDO 1: DATOS ASOCIADOS (Si activeTab === 'datos' o 'todo') */}
+              {(activeTab === 'datos' || activeTab === 'todo') && (
+                <div className="space-y-4">
+                  {/* Alerta de rango lógico si existe */}
+                  {pedido.alerta_rango_logico && (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-amber-300 block">Alerta de Rango Lógico Detectada</span>
+                        <p className="text-amber-200/80 mt-0.5">
+                          {pedido.detalle_alerta_rango || 'La numeración de placa excede los rangos catastrales normales de la vía.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-                <div className="overflow-x-auto rt-wrap">
-                  <table className="w-full text-left text-xs border-collapse rt">
-                    <thead>
-                      <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                        <th className="py-3 px-4 w-12 text-center">N.°</th>
-                        <th className="py-3 px-4 w-44">Fecha y Hora</th>
-                        <th className="py-3 px-4 w-36">Tipo de Escaneo</th>
-                        <th className="py-3 px-4 w-44">Operador / Usuario</th>
-                        <th className="py-3 px-4 min-w-[320px]">Descripción del Historial de Seguimiento</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {orderDetail.historial.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-500">
-                            No hay eventos registrados para esta guía.
-                          </td>
-                        </tr>
-                      ) : (
-                        orderDetail.historial.map((ev, index) => {
-                          const num = index + 1;
-                          const isLast = index === orderDetail.historial.length - 1;
-                          return (
-                            <tr
-                              key={ev.id || index}
-                              className={`transition-colors hover:bg-slate-800/40 ${
-                                isLast ? 'bg-blue-500/5' : ''
-                              }`}
+                  {/* Grupo 1: Información del Destinatario & Paquete */}
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
+                      <User className="w-3.5 h-3.5 text-blue-400" />
+                      Destinatario & Contacto
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Nombre del Destinatario
+                        </span>
+                        <p className="text-slate-100 font-semibold text-sm">
+                          {pedido.cliente || 'No especificado'}
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Teléfono de Contacto
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <p className="text-slate-100 font-mono font-semibold">
+                            {pedido.telefono_cliente || 'No registrado'}
+                          </p>
+                          {pedido.telefono_cliente && (
+                            <button
+                              onClick={() => handleCopiar(pedido.telefono_cliente, 'Teléfono')}
+                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                              title="Copiar teléfono"
                             >
-                              {/* N.° */}
-                              <td data-label="N.°" className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
-                                {num}
-                              </td>
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                              {/* Hora de Escaneo */}
-                              <td data-label="Fecha y Hora" className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
-                                {formatDateTime(ev.fecha)}
-                              </td>
+                      <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Observaciones / Complemento de Entrega
+                        </span>
+                        <p className="text-slate-200">
+                          {pedido.observaciones_entrega || pedido.complemento || 'Sin observaciones registradas'}
+                        </p>
+                      </div>
+                    </div>
+                  </GlassCard>
 
-                              {/* Tipo de Escaneo */}
-                              <td data-label="Tipo" className="py-3 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1 font-semibold text-slate-200">
-                                  {ev.tipo_evento === 'ENTREGADO' && (
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                  )}
-                                  {ev.tipo_evento === 'EN_RUTA' && (
-                                    <Truck className="w-3.5 h-3.5 text-blue-400" />
-                                  )}
-                                  {ev.tipo_evento === 'INGRESO_BODEGA' && (
-                                    <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                                  )}
-                                  {ev.tipo_evento === 'REUBICACION_BODEGA' && (
-                                    <Layers className="w-3.5 h-3.5 text-amber-400" />
-                                  )}
-                                  {ev.tipo_evento === 'SECTORIZACION_ESCANEO' && (
-                                    <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                                  )}
-                                  {ev.tipo_evento === 'REASIGNACION_ZONA' && (
-                                    <Layers className="w-3.5 h-3.5 text-purple-400" />
-                                  )}
-                                  {ev.tipo_evento === 'IMPORTACION' && (
-                                    <FileText className="w-3.5 h-3.5 text-slate-400" />
-                                  )}
-                                  <span className="text-[11px]">
-                                    {ev.tipo_evento === 'SECTORIZACION_ESCANEO' ? 'SECTORIZADO (ESCÁNER)' : ev.tipo_evento}
-                                  </span>
-                                </span>
-                              </td>
+                  {/* Grupo 2: Georreferenciación & Normalización Catastral */}
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
+                      <Compass className="w-3.5 h-3.5 text-emerald-400" />
+                      Georreferenciación & Normalización de Dirección
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Dirección Original (Declarada)
+                        </span>
+                        <p className="text-slate-300 font-mono break-words">
+                          {pedido.direccion_original}
+                        </p>
+                      </div>
 
-                              {/* Operador de Escáner / Usuario */}
-                              <td data-label="Operador" className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
-                                <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-white/5 font-medium text-slate-200">
-                                  {ev.usuario_nombre || 'Sistema'}
-                                </span>
-                              </td>
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Dirección Limpia (Normalizada GeoFull)
+                        </span>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-emerald-300 font-mono font-bold break-words">
+                            {pedido.direccion_limpia || '---'}
+                          </p>
+                          {pedido.direccion_limpia && (
+                            <button
+                              onClick={() => handleCopiar(pedido.direccion_limpia, 'Dirección Limpia')}
+                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0"
+                              title="Copiar dirección limpia"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                              {/* Descripción Enriquecida Estilo JMS */}
-                              <td data-label="Descripción" className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
-                                {renderDescripcionJMS(ev.descripcion)}
-                              </td>
-                            </tr>
-                          );
-                        })
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Coordenadas Geográficas
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <p className="text-slate-200 font-mono text-[11px]">
+                            {pedido.latitud && pedido.longitud
+                              ? `${pedido.latitud}, ${pedido.longitud}`
+                              : 'No georreferenciado'}
+                          </p>
+                          {pedido.latitud && pedido.longitud && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleCopiar(`${pedido.latitud}, ${pedido.longitud}`, 'Coordenadas')}
+                                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                                title="Copiar coordenadas"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Calidad de Geocodificación
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="titanium" className="text-[10px]">
+                            {pedido.nivel_precision || 'Desconocido'}
+                          </Badge>
+                          {pedido.precision_metros && (
+                            <span className="text-slate-300 font-mono text-[11px]">
+                              Margen: {pedido.precision_metros}m
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Clave Catastral / Normalización
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-slate-200 font-bold">
+                            {pedido.clave_direccion || '---'}
+                          </span>
+                          {pedido.estado_normalizacion && (
+                            <Badge 
+                              variant={pedido.estado_normalizacion === 'OK' ? 'emerald' : 'amber'} 
+                              className="text-[10px]"
+                            >
+                              Estado: {pedido.estado_normalizacion}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Zona de Reparto Asignada
+                        </span>
+                        <div className="flex items-center gap-1.5 text-blue-400 font-bold">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span>{pedido.zona_nombre || 'Sin Zona (Fuera de cobertura)'}</span>
+                        </div>
+                      </div>
+
+                      {pedido.advertencias_normalizacion?.length > 0 && (
+                        <div className="md:col-span-2 bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                            <Info className="w-3 h-3" />
+                            Ajustes del Motor de Normalización
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {pedido.advertencias_normalizacion.map((adv, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[11px]"
+                              >
+                                {adv}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                  </GlassCard>
+
+                  {/* Grupo 3: Operación Logística & Liquidación */}
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
+                      <Truck className="w-3.5 h-3.5 text-amber-400" />
+                      Operación Logística & Fechas
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Proveedor Logístico
+                        </span>
+                        <p className="text-slate-100 font-semibold">
+                          {pedido.proveedor_entrega || 'iMile'}
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Liquidación Conductor
+                        </span>
+                        <div>
+                          {pedido.pagado_conductor ? (
+                            <Badge variant="emerald" className="text-[10px]">Liquidado / Pagado</Badge>
+                          ) : (
+                            <Badge variant="amber" className="text-[10px]">Pendiente de Liquidar</Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Fecha de Importación
+                        </span>
+                        <p className="text-slate-300 font-mono text-[11px]">
+                          {formatDateTime(pedido.fecha_importacion)}
+                        </p>
+                      </div>
+
+                      <div className="bg-slate-950/40 p-3 rounded-2xl border border-white/5 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Fecha de Entrega
+                        </span>
+                        <p className="text-slate-300 font-mono text-[11px]">
+                          {formatDateTime(pedido.fecha_entrega)}
+                        </p>
+                      </div>
+                    </div>
+                  </GlassCard>
+
+                  {/* Grupo 4: Datos Adicionales del Archivo de Importación (datos_extra) */}
+                  <GlassCard className="p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-blue-400" />
+                        Datos Adicionales del Archivo Fuente ({Object.keys(pedido.datos_extra || {}).length} Atributos)
+                      </h4>
+
+                      {Object.keys(pedido.datos_extra || {}).length > 6 && (
+                        <div className="relative">
+                          <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={extraDataSearch}
+                            onChange={(e) => setExtraDataSearch(e.target.value)}
+                            placeholder="Buscar en datos..."
+                            className="bg-slate-950/60 border border-white/10 rounded-lg pl-7 pr-2.5 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 w-44"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {!pedido.datos_extra || Object.keys(pedido.datos_extra).length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">
+                        No se registraron atributos adicionales en el archivo Excel/CSV original de esta guía.
+                      </p>
+                    ) : datosExtraFiltrados.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-3 text-center">
+                        No hay campos que coincidan con la búsqueda "{extraDataSearch}".
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
+                        {datosExtraFiltrados.map(([clave, valor]) => {
+                          const valStr = valor !== null && valor !== undefined ? String(valor) : '---';
+                          return (
+                            <div
+                              key={clave}
+                              className="bg-slate-950/50 p-2.5 rounded-xl border border-white/5 space-y-1 hover:border-blue-500/30 transition-colors group relative"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate pr-1">
+                                  {clave}
+                                </span>
+                                <button
+                                  onClick={() => handleCopiar(valStr, clave)}
+                                  className="text-slate-500 group-hover:text-slate-300 transition-colors p-0.5 rounded"
+                                  title={`Copiar ${clave}`}
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                              <p
+                                className="text-xs text-slate-200 font-mono font-medium truncate"
+                                title={valStr}
+                              >
+                                {valStr}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </GlassCard>
                 </div>
-              </GlassCard>
+              )}
+
+              {/* CONTENIDO 2: TRAZABILIDAD JMS (Si activeTab === 'historial' o 'todo') */}
+              {(activeTab === 'historial' || activeTab === 'todo') && (
+                <GlassCard className="p-0 overflow-hidden border border-white/10">
+                  <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/50">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-blue-400" />
+                      Línea de Tiempo del Historial de Seguimiento (Estilo JMS)
+                    </h3>
+                    <Badge variant="titanium" className="text-[10px]">
+                      {orderDetail.historial.length} Eventos Cronológicos
+                    </Badge>
+                  </div>
+
+                  <div className="overflow-x-auto rt-wrap">
+                    <table className="w-full text-left text-xs border-collapse rt">
+                      <thead>
+                        <tr className="border-b border-white/10 bg-slate-950/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="py-3 px-4 w-12 text-center">N.°</th>
+                          <th className="py-3 px-4 w-44">Fecha y Hora</th>
+                          <th className="py-3 px-4 w-36">Tipo de Escaneo</th>
+                          <th className="py-3 px-4 w-44">Operador / Usuario</th>
+                          <th className="py-3 px-4 min-w-[320px]">Descripción del Historial de Seguimiento</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {orderDetail.historial.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-500">
+                              No hay eventos registrados para esta guía.
+                            </td>
+                          </tr>
+                        ) : (
+                          orderDetail.historial.map((ev, index) => {
+                            const num = index + 1;
+                            const isLast = index === orderDetail.historial.length - 1;
+                            return (
+                              <tr
+                                key={ev.id || index}
+                                className={`transition-colors hover:bg-slate-800/40 ${
+                                  isLast ? 'bg-blue-500/5' : ''
+                                }`}
+                              >
+                                {/* N.° */}
+                                <td data-label="N.°" className="py-3 px-4 text-center font-mono font-bold text-slate-400 text-xs">
+                                  {num}
+                                </td>
+
+                                {/* Hora de Escaneo */}
+                                <td data-label="Fecha y Hora" className="py-3 px-4 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                                  {formatDateTime(ev.fecha)}
+                                </td>
+
+                                {/* Tipo de Escaneo */}
+                                <td data-label="Tipo" className="py-3 px-4 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 font-semibold text-slate-200">
+                                    {ev.tipo_evento === 'ENTREGADO' && (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                    )}
+                                    {ev.tipo_evento === 'EN_RUTA' && (
+                                      <Truck className="w-3.5 h-3.5 text-blue-400" />
+                                    )}
+                                    {ev.tipo_evento === 'INGRESO_BODEGA' && (
+                                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                                    )}
+                                    {ev.tipo_evento === 'REUBICACION_BODEGA' && (
+                                      <Layers className="w-3.5 h-3.5 text-amber-400" />
+                                    )}
+                                    {ev.tipo_evento === 'SECTORIZACION_ESCANEO' && (
+                                      <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                                    )}
+                                    {ev.tipo_evento === 'REASIGNACION_ZONA' && (
+                                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                                    )}
+                                    {ev.tipo_evento === 'IMPORTACION' && (
+                                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                    )}
+                                    <span className="text-[11px]">
+                                      {ev.tipo_evento === 'SECTORIZACION_ESCANEO' ? 'SECTORIZADO (ESCÁNER)' : ev.tipo_evento}
+                                    </span>
+                                  </span>
+                                </td>
+
+                                {/* Operador de Escáner / Usuario */}
+                                <td data-label="Operador" className="py-3 px-4 text-[11px] text-slate-300 whitespace-nowrap">
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-800/80 border border-white/5 font-medium text-slate-200">
+                                    {ev.usuario_nombre || 'Sistema'}
+                                  </span>
+                                </td>
+
+                                {/* Descripción Enriquecida Estilo JMS */}
+                                <td data-label="Descripción" className="py-3 px-4 text-[12px] text-slate-300 leading-relaxed">
+                                  {renderDescripcionJMS(ev.descripcion)}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+              )}
             </>
           )}
         </div>

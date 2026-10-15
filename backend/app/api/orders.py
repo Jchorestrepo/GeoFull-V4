@@ -30,6 +30,10 @@ class OrderCreateRequest(BaseModel):
     datos_extra: Optional[Dict[str, Any]] = None
 
 
+class BatchOrderRequest(BaseModel):
+    items: List[OrderCreateRequest]
+
+
 class AssignZoneRequest(BaseModel):
     zona_id: uuid.UUID
 
@@ -63,6 +67,15 @@ class OrderResponse(BaseModel):
     clave_direccion: Optional[str] = None
     confianza_normalizacion: Optional[float] = None
     advertencias_normalizacion: List[str] = []
+
+
+class BatchOrderResponse(BaseModel):
+    total_procesados: int
+    exitosos_count: int
+    fuera_zona_count: int
+    no_limpiados_count: int
+    pedidos: List[OrderResponse]
+
 
 
 def _build_order_response(r) -> OrderResponse:
@@ -253,6 +266,162 @@ async def process_single_order(
         await session.commit()
 
         return _build_order_response(r)
+
+
+@router.post("/process-batch", response_model=BatchOrderResponse, status_code=status.HTTP_201_CREATED)
+async def process_batch_orders(
+    req: BatchOrderRequest,
+    current_user: dict = Depends(get_current_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """Procesa un lote de guías masivo: Normalizador -> Geocoder -> Sectorizer -> UPSERT en BD."""
+    if not req.items:
+        return BatchOrderResponse(
+            total_procesados=0,
+            exitosos_count=0,
+            fuera_zona_count=0,
+            no_limpiados_count=0,
+            pedidos=[]
+        )
+
+    processed_orders = []
+    exitosos = 0
+    fuera_zona = 0
+    no_limpiados = 0
+
+    user_id = current_user.get("id") if current_user.get("id") else None
+    user_name = current_user.get("nombre") or current_user.get("email") or "Operador Importación"
+
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        for item in req.items:
+            try:
+                resultado = normalizar(item.direccion_original, _cfg_normalizador)
+                normalized = desde_resultado(resultado)
+                geocoded = await geocode_address(session, normalized)
+                sectorized = await sectorize_point(
+                    session, x_tenant_id,
+                    geocoded.latitud, geocoded.longitud,
+                    normalized
+                )
+                estado_pedido = sectorized.estado if resultado.estado == Estado.OK else "REQUIERE_REVISIÓN"
+                observaciones = " | ".join(
+                    a[len(PREFIJO_DESCARTADO):].strip("'") for a in resultado.advertencias if a.startswith(PREFIJO_DESCARTADO)
+                )
+
+                if estado_pedido == "FUERA_DE_ZONA":
+                    fuera_zona += 1
+                elif resultado.estado != Estado.OK or estado_pedido == "REQUIERE_REVISIÓN":
+                    no_limpiados += 1
+                else:
+                    exitosos += 1
+
+                geom_sql = "ST_SetSRID(ST_Point(:lon, :lat), 4326)" if geocoded.longitud and geocoded.latitud else "NULL"
+                datos_extra_json = json.dumps(item.datos_extra) if item.datos_extra else "{}"
+
+                upsert_sql = text(f"""
+                    INSERT INTO pedidos (
+                        tenant_id, guia, cliente, telefono_cliente,
+                        direccion_original, direccion_limpia, observaciones_entrega, datos_extra,
+                        latitud, longitud, geom, nivel_precision, precision_metros,
+                        confianza_score, zona_id, zona_nombre, estado,
+                        alerta_rango_logico, detalle_alerta_rango,
+                        estado_normalizacion, clave_direccion, confianza_normalizacion, advertencias_normalizacion
+                    ) VALUES (
+                        :tenant_id, :guia, :cliente, :telefono_cliente,
+                        :direccion_original, :direccion_limpia, :observaciones_entrega, CAST(:datos_extra AS JSONB),
+                        :latitud, :longitud, {geom_sql}, :nivel_precision, :precision_metros,
+                        :confianza_score, :zona_id, :zona_nombre, :estado,
+                        :alerta_rango, :detalle_alerta,
+                        :estado_normalizacion, :clave_direccion, :confianza_normalizacion, CAST(:advertencias_normalizacion AS JSONB)
+                    )
+                    ON CONFLICT (tenant_id, guia) DO UPDATE SET
+                        cliente = COALESCE(EXCLUDED.cliente, pedidos.cliente),
+                        telefono_cliente = COALESCE(EXCLUDED.telefono_cliente, pedidos.telefono_cliente),
+                        direccion_original = EXCLUDED.direccion_original,
+                        direccion_limpia = EXCLUDED.direccion_limpia,
+                        observaciones_entrega = EXCLUDED.observaciones_entrega,
+                        datos_extra = EXCLUDED.datos_extra,
+                        latitud = EXCLUDED.latitud,
+                        longitud = EXCLUDED.longitud,
+                        geom = EXCLUDED.geom,
+                        nivel_precision = EXCLUDED.nivel_precision,
+                        precision_metros = EXCLUDED.precision_metros,
+                        confianza_score = EXCLUDED.confianza_score,
+                        zona_id = EXCLUDED.zona_id,
+                        zona_nombre = EXCLUDED.zona_nombre,
+                        estado = EXCLUDED.estado,
+                        alerta_rango_logico = EXCLUDED.alerta_rango_logico,
+                        detalle_alerta_rango = EXCLUDED.detalle_alerta_rango,
+                        estado_normalizacion = EXCLUDED.estado_normalizacion,
+                        clave_direccion = EXCLUDED.clave_direccion,
+                        confianza_normalizacion = EXCLUDED.confianza_normalizacion,
+                        advertencias_normalizacion = EXCLUDED.advertencias_normalizacion,
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                    RETURNING *
+                """)
+
+                res = await session.execute(upsert_sql, {
+                    "tenant_id": x_tenant_id,
+                    "guia": item.guia,
+                    "cliente": item.cliente,
+                    "telefono_cliente": item.telefono_cliente,
+                    "direccion_original": item.direccion_original,
+                    "direccion_limpia": resultado.direccion,
+                    "observaciones_entrega": observaciones or None,
+                    "datos_extra": datos_extra_json,
+                    "latitud": geocoded.latitud,
+                    "longitud": geocoded.longitud,
+                    "lon": geocoded.longitud,
+                    "lat": geocoded.latitud,
+                    "nivel_precision": geocoded.nivel_precision,
+                    "precision_metros": geocoded.precision_metros,
+                    "confianza_score": geocoded.confianza_score,
+                    "zona_id": sectorized.zona_id,
+                    "zona_nombre": sectorized.zona_nombre,
+                    "estado": estado_pedido,
+                    "alerta_rango": sectorized.alerta_rango_logico,
+                    "detalle_alerta": sectorized.detalle_alerta_rango,
+                    "estado_normalizacion": resultado.estado.value,
+                    "clave_direccion": resultado.clave,
+                    "confianza_normalizacion": resultado.confianza,
+                    "advertencias_normalizacion": json.dumps(resultado.advertencias, ensure_ascii=False)
+                })
+                r = res.first()
+
+                zona_info = f" | Zona sugerida: 【{sectorized.zona_nombre}】" if sectorized.zona_nombre else " | Pendiente sectorización"
+                desc_evento = f"【Importación Lote】 Dirección: {item.direccion_original}{zona_info}"
+                await registrar_historial_evento(
+                    session=session,
+                    tenant_id=x_tenant_id,
+                    pedido_id=r.id,
+                    guia=r.guia,
+                    tipo_evento="IMPORTACION",
+                    descripcion=desc_evento,
+                    estado_anterior=None,
+                    estado_nuevo=estado_pedido,
+                    usuario_id=user_id,
+                    usuario_nombre=user_name,
+                    detalles={
+                        "direccion_limpia": resultado.direccion,
+                        "zona_nombre": sectorized.zona_nombre,
+                        "nivel_precision": geocoded.nivel_precision
+                    }
+                )
+
+                processed_orders.append(_build_order_response(r))
+            except Exception as e:
+                print(f"Error procesando guía {item.guia}: {e}")
+                no_limpiados += 1
+
+        await session.commit()
+
+        return BatchOrderResponse(
+            total_procesados=len(req.items),
+            exitosos_count=exitosos,
+            fuera_zona_count=fuera_zona,
+            no_limpiados_count=no_limpiados,
+            pedidos=processed_orders
+        )
 
 
 @router.patch("/{order_id}/assign-zone", response_model=OrderResponse)

@@ -168,11 +168,9 @@ export function SectorizacionPage() {
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
             <MapPin className="w-6 h-6 text-emerald-400 shrink-0" />
-            Etapa 1 — Sectorización & Importación Masiva
+            Sectorización
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Geocodificación PostGIS en tiempo real, escaneo inteligente por voz y asignación manual de zonas.
-          </p>
+          
         </div>
 
         {/* Action Header Buttons */}

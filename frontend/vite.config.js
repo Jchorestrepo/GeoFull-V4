@@ -13,5 +13,17 @@ export default defineConfig({
         secure: false,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor_react: ['react', 'react-dom', 'react-router-dom'],
+          vendor_xlsx: ['xlsx'],
+          vendor_leaflet: ['leaflet'],
+          vendor_icons: ['lucide-react']
+        }
+      }
+    }
   }
 });

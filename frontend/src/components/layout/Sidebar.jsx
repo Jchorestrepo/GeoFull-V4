@@ -47,7 +47,7 @@ export function Sidebar() {
             <h1 className="font-bold text-base tracking-tight text-white flex items-center gap-2">
               GeoFull <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-semibold border border-blue-500/30">V4</span>
             </h1>
-            <p className="text-[11px] text-slate-400 tracking-tight">Geocodificación & Multi-Tenant</p>
+            <p className="text-[11px] text-slate-400 tracking-tight">Geocodificación & Control</p>
           </div>
         </div>
 

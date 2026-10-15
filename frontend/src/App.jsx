@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './pages/LoginPage';
 
@@ -63,7 +64,9 @@ function MainAppContent() {
 export function App() {
   return (
     <AuthProvider>
-      <MainAppContent />
+      <ToastProvider>
+        <MainAppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

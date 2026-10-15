@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
@@ -23,7 +23,14 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Barcode,
+  Package,
+  Volume2,
+  VolumeX,
+  RotateCcw,
+  Building2,
+  ClipboardPaste
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -31,7 +38,7 @@ export function ControlConciliacionPage() {
   const [activeMainTab, setActiveMainTab] = useState('rutas_diarias');
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
-  const [filterState, setFilterState] = useState('TODOS');
+  const [filterState, setFilterState] = useState('ASIGNADO');
   const [filterDriver, setFilterDriver] = useState('TODOS');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -44,6 +51,21 @@ export function ControlConciliacionPage() {
   const [unifying, setUnifying] = useState(false);
   const [toast, setToast] = useState(null);
   const [isStale, setIsStale] = useState(dataCache.isStale('reconciliationOrders'));
+
+  // Estado para el Lector de Códigos de Barras y Devoluciones (Bodega vs Proveedor)
+  const [returnMode, setReturnMode] = useState('BODEGA'); // 'BODEGA' | 'PROVEEDOR'
+  const [scanInputType, setScanInputType] = useState('individual'); // 'individual' | 'lote'
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [scanningBarcode, setScanningBarcode] = useState(false);
+  const [lastScannedReturn, setLastScannedReturn] = useState(null);
+  const [recentReturns, setRecentReturns] = useState([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const barcodeInputRef = useRef(null);
+
+  // Estado para pegado masivo / lote (Excel / texto)
+  const [batchInput, setBatchInput] = useState('');
+  const [processingBatch, setProcessingBatch] = useState(false);
+  const [batchResult, setBatchResult] = useState(null);
 
   const { activeTenantId } = useAuth();
 
@@ -129,15 +151,169 @@ export function ControlConciliacionPage() {
     });
   };
 
+  // Sintetizador Web Audio para confirmación del escaneo (beeps tipo lector de caja/bodega)
+  const playScannerSound = useCallback((type) => {
+    if (!soundEnabled) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+
+      if (type === 'success') {
+        // Beep Agudo Estándar de pistola de código de barras (880 Hz, 120ms)
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else {
+        // Tono grave de error (220 Hz, 280ms)
+        osc.frequency.setValueAtTime(220, now);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+        osc.start(now);
+        osc.stop(now + 0.28);
+      }
+    } catch {
+      // AudioContext failure gracefully ignored
+    }
+  }, [soundEnabled]);
+
+  // Parser de guías pegadas en lote (desde Excel o texto)
+  const detectedGuides = useMemo(() => {
+    if (!batchInput.trim()) return [];
+    const items = batchInput.split(/[\r\n,;\t]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    return Array.from(new Set(items));
+  }, [batchInput]);
+
+  // Manejador del escáner de códigos de barras individual (Bodega vs Proveedor)
+  const handleScanReturn = async (e) => {
+    if (e) e.preventDefault();
+    const code = barcodeInput.trim();
+    if (!code || scanningBarcode) return;
+
+    setScanningBarcode(true);
+    const isProv = returnMode === 'PROVEEDOR';
+    try {
+      const res = await axios.post('/api/v1/reconciliation/scan-return-to-warehouse', {
+        barcode: code,
+        motivo: isProv ? 'DEVOLUCION_PROVEEDOR' : 'NO_ENTREGADO_RUTA',
+        tipo_destino: returnMode
+      });
+
+      playScannerSound('success');
+      const data = res.data;
+      setLastScannedReturn(data);
+      setRecentReturns(prev => [
+        {
+          ...data,
+          time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        },
+        ...prev.filter(item => item.guia !== data.guia).slice(0, 14)
+      ]);
+
+      setToast({
+        type: 'success',
+        title: isProv ? 'Devuelto al Proveedor' : 'Reingresado a Bodega',
+        message: isProv
+          ? `Guía ${data.guia} enviada al PROVEEDOR (retirada de ${data.domiciliario_anterior}).`
+          : `Guía ${data.guia} reingresada a BODEGA (retirada de ${data.domiciliario_anterior}).`
+      });
+
+      setBarcodeInput('');
+      dataCache.notifyMutation();
+      fetchReconciliationData(true);
+    } catch (err) {
+      console.error("Error al procesar devolución", err);
+      playScannerSound('error');
+      const msg = err.response?.data?.detail || 'No se pudo procesar la devolución.';
+      setToast({
+        type: 'error',
+        title: 'Error de Escaneo',
+        message: msg
+      });
+    } finally {
+      setScanningBarcode(false);
+      barcodeInputRef.current?.focus();
+    }
+  };
+
+  // Manejador para procesamiento en lote masivo pegado de Excel o documento
+  const handleBatchReturn = async () => {
+    if (detectedGuides.length === 0 || processingBatch) return;
+
+    setProcessingBatch(true);
+    const isProv = returnMode === 'PROVEEDOR';
+    try {
+      const res = await axios.post('/api/v1/reconciliation/batch-return-to-warehouse', {
+        barcodes: detectedGuides,
+        tipo_destino: returnMode,
+        motivo: isProv ? 'DEVOLUCION_PROVEEDOR_LOTE' : 'REINGRESO_BODEGA_LOTE'
+      });
+
+      playScannerSound('success');
+      const data = res.data;
+      setBatchResult(data);
+
+      setToast({
+        type: data.exitosos_count > 0 ? 'success' : 'error',
+        title: isProv ? 'Lote Devuelto al Proveedor' : 'Lote Reingresado a Bodega',
+        message: `Procesadas ${data.exitosos_count} de ${data.total_recibidos} guías con éxito.${data.fallidos_count > 0 ? ` (${data.fallidos_count} novedades)` : ''}`
+      });
+
+      if (data.exitosos_count > 0) {
+        setBatchInput('');
+        dataCache.notifyMutation();
+        fetchReconciliationData(true);
+      }
+    } catch (err) {
+      console.error("Error al procesar lote", err);
+      playScannerSound('error');
+      const msg = err.response?.data?.detail || 'Error al procesar el lote de guías.';
+      setToast({
+        type: 'error',
+        title: 'Error de Lote',
+        message: msg
+      });
+    } finally {
+      setProcessingBatch(false);
+    }
+  };
+
+  // Auto-detección de pegado multilínea en el input individual
+  const handleSingleInputPaste = (e) => {
+    const text = e.clipboardData?.getData('text');
+    if (!text) return;
+    const tokens = text.split(/[\r\n,;\t]+/).map(s => s.trim()).filter(Boolean);
+    if (tokens.length > 1) {
+      e.preventDefault();
+      setScanInputType('lote');
+      setBatchInput(text);
+      setToast({
+        type: 'info',
+        title: 'Modo Lote Detectado',
+        message: `Se detectaron ${tokens.length} guías pegadas. Cambiado a modo Pegar Lote.`
+      });
+    }
+  };
+
   // Filtrado memoizado por estado, domiciliario y búsqueda instantánea
   const filteredOrders = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return orders.filter(o => {
       if (filterDriver !== 'TODOS' && o.domiciliario_nombre !== filterDriver) return false;
 
-      if (filterState === 'TODOS' && !(o.estado === 'ENTREGADO' || o.estado === 'ASIGNADO')) return false;
+      if (filterState === 'TODOS' && !(o.estado === 'ENTREGADO' || o.estado === 'ASIGNADO' || o.estado === 'DEVUELTO_PROVEEDOR')) return false;
       if (filterState === 'ENTREGADO' && o.estado !== 'ENTREGADO') return false;
       if (filterState === 'ASIGNADO' && o.estado !== 'ASIGNADO') return false;
+      if (filterState === 'DEVUELTO_PROVEEDOR' && o.estado !== 'DEVUELTO_PROVEEDOR') return false;
       if (filterState === 'PENDIENTE_PAGO' && !(o.estado === 'ENTREGADO' && !o.pagado_conductor)) return false;
 
       if (!term) return true;
@@ -161,8 +337,17 @@ export function ControlConciliacionPage() {
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, currentPage, pageSize]);
 
-  const metrics = summary?.metricas || { total_entregados: 0, total_asignados_en_ruta: 0, total_pendientes_pago_nomina: 0 };
-  const driversList = summary?.domiciliarios || [];
+  const metrics = summary?.metricas || { total_entregados: 0, total_asignados_en_ruta: 0, total_pendientes_pago_nomina: 0, total_devueltos_proveedor: 0 };
+  const allDrivers = summary?.domiciliarios || [];
+  const driversList = useMemo(() => {
+    return allDrivers.filter(d => (Number(d.total_en_ruta) || 0) > 0);
+  }, [allDrivers]);
+
+  useEffect(() => {
+    if (filterDriver !== 'TODOS' && !driversList.some(d => d.domiciliario === filterDriver)) {
+      setFilterDriver('TODOS');
+    }
+  }, [driversList, filterDriver]);
 
   return (
     <div className="space-y-6">
@@ -208,7 +393,7 @@ export function ControlConciliacionPage() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-6">
         <GlassCard className="p-4 sm:p-5 rounded-3xl border border-white/10 flex items-center gap-3 sm:gap-4">
           <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
             <CheckCircle2 className="w-6 h-6" />
@@ -232,27 +417,373 @@ export function ControlConciliacionPage() {
         </GlassCard>
 
         <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
-            <DollarSign className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-400">Pendientes Pago Nómina</p>
-            <h3 className="text-2xl font-extrabold text-white">{metrics.total_pendientes_pago_nomina}</h3>
-            <p className="text-[11px] text-purple-400 mt-0.5">pagado_conductor = FALSE</p>
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-5 rounded-3xl border border-white/10 flex items-center gap-4">
           <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs text-slate-400">Domiciliarios Registrados</p>
+            <p className="text-xs text-slate-400">Domiciliarios con Pendientes</p>
             <h3 className="text-2xl font-extrabold text-white">{driversList.length}</h3>
-            <p className="text-[11px] text-blue-400 mt-0.5">Auto-detectados</p>
+            <p className="text-[11px] text-blue-400 mt-0.5">
+              Con paquetes en ruta {allDrivers.length > 0 ? `(${allDrivers.length} reg.)` : ''}
+            </p>
           </div>
         </GlassCard>
       </div>
+
+      {/* Barcode Scanner & Batch Return Processor Card */}
+      <GlassCard className={`p-4 sm:p-5 rounded-3xl border transition-all duration-300 shadow-2xl relative overflow-hidden backdrop-blur-xl ${
+        returnMode === 'PROVEEDOR'
+          ? 'bg-gradient-to-b from-rose-950/40 via-slate-900/90 to-slate-900/90 border-rose-500/50 shadow-rose-950/30'
+          : 'bg-slate-900/60 border-white/10'
+      }`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className={`p-3 rounded-2xl border shrink-0 shadow-inner transition-colors ${
+              returnMode === 'PROVEEDOR'
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+            }`}>
+              {returnMode === 'PROVEEDOR' ? <Truck className="w-6 h-6" /> : <Barcode className="w-6 h-6" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">
+                  {returnMode === 'PROVEEDOR' ? 'Devolución de Ruta / Inventario al Proveedor' : 'Recepción de Devoluciones a Bodega'}
+                </h3>
+                {returnMode === 'PROVEEDOR' ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] uppercase font-mono px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 animate-pulse font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                    MODO: DEVOLUCIÓN A PROVEEDOR
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Modo Bodega Activo
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {returnMode === 'PROVEEDOR'
+                  ? 'Las guías escaneadas o pegadas pasarán a DEVUELTO_PROVEEDOR y se descontarán de la ruta.'
+                  : 'Las guías devueltas por los domiciliarios se reingresarán a bodega (EN_BODEGA) y se liberarán de la ruta.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Mode Switchers: Bodega vs Proveedor & Sound */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {/* Toggle Destination: Bodega vs Proveedor */}
+            <div className="flex items-center p-1 rounded-2xl bg-slate-950/80 border border-white/10 gap-1">
+              <button
+                type="button"
+                onClick={() => setReturnMode('BODEGA')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  returnMode === 'BODEGA'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>A Bodega</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReturnMode('PROVEEDOR')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  returnMode === 'PROVEEDOR'
+                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 font-bold'
+                    : 'text-slate-400 hover:text-rose-300'
+                }`}
+              >
+                <Truck className="w-3.5 h-3.5 text-rose-400" />
+                <span>Devolver al Proveedor</span>
+              </button>
+            </div>
+
+            {/* Sound Toggle */}
+            <button
+              type="button"
+              onClick={() => setSoundEnabled(prev => !prev)}
+              className={`touch-target p-2.5 rounded-2xl border text-xs flex items-center gap-1.5 transition-all ${
+                soundEnabled
+                  ? 'bg-slate-800 border-white/10 text-slate-300 hover:text-white'
+                  : 'bg-slate-900 border-white/5 text-slate-500'
+              }`}
+              title={soundEnabled ? 'Sonido activado' : 'Sonido silenciado'}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-blue-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Input Method Tabs: Escáner 1 a 1 vs Pegar Lote */}
+        <div className="mt-4 flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setScanInputType('individual')}
+              className={`px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
+                scanInputType === 'individual'
+                  ? 'bg-slate-800 text-white border border-white/10'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Barcode className="w-3.5 h-3.5" />
+              <span>Escáner 1 a 1</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setScanInputType('lote')}
+              className={`px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
+                scanInputType === 'lote'
+                  ? 'bg-slate-800 text-white border border-white/10'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              <span>Pegar Lote (Excel / Lista)</span>
+              {detectedGuides.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-300 font-mono text-[10px]">
+                  {detectedGuides.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            {scanInputType === 'individual' ? 'Presiona Enter o pistolea' : 'Pega columnas directas de Excel'}
+          </span>
+        </div>
+
+        {/* Form: Single Scan vs Batch Mode */}
+        {scanInputType === 'individual' ? (
+          <form onSubmit={handleScanReturn} className="mt-3 flex flex-col sm:flex-row items-stretch gap-2.5">
+            <div className="relative flex-1">
+              <Barcode className={`w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none transition-colors ${
+                returnMode === 'PROVEEDOR' ? 'text-rose-400' : 'text-slate-400'
+              }`} />
+              <input
+                ref={barcodeInputRef}
+                type="text"
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                onPaste={handleSingleInputPaste}
+                placeholder={
+                  returnMode === 'PROVEEDOR'
+                    ? "⚠️ MODO PROVEEDOR ACTIVO: Escanea la guía o pega una lista para devolver al proveedor..."
+                    : "Escanea el código de barras de la guía o escribe el número y presiona Enter..."
+                }
+                disabled={scanningBarcode}
+                autoFocus
+                className={`w-full pl-11 pr-10 py-3 rounded-2xl text-sm md:text-base font-mono focus:outline-none transition-all shadow-inner ${
+                  returnMode === 'PROVEEDOR'
+                    ? 'bg-rose-950/30 border-2 border-rose-500/60 focus:border-rose-400 focus:ring-2 focus:ring-rose-500/30 text-rose-100 placeholder:text-rose-400/40'
+                    : 'bg-slate-950/80 border border-white/15 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 text-white placeholder:text-slate-500'
+                }`}
+              />
+              {barcodeInput && (
+                <button
+                  type="button"
+                  onClick={() => { setBarcodeInput(''); barcodeInputRef.current?.focus(); }}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={scanningBarcode || !barcodeInput.trim()}
+              className={`touch-target px-5 py-3 rounded-2xl disabled:opacity-40 text-white text-xs sm:text-sm font-semibold transition-all shadow-lg flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:cursor-not-allowed ${
+                returnMode === 'PROVEEDOR'
+                  ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30'
+                  : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+              }`}
+            >
+              {scanningBarcode ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Procesando...</span>
+                </>
+              ) : returnMode === 'PROVEEDOR' ? (
+                <>
+                  <Truck className="w-4 h-4" />
+                  <span>Devolver a Proveedor</span>
+                </>
+              ) : (
+                <>
+                  <Package className="w-4 h-4" />
+                  <span>Reingresar a Bodega</span>
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          /* Batch Paste Textarea */
+          <div className="mt-3 space-y-2.5">
+            <div className="relative">
+              <textarea
+                rows={4}
+                value={batchInput}
+                onChange={(e) => setBatchInput(e.target.value)}
+                placeholder={`Pega aquí el listado de guías copiado de Excel o texto (una guía por línea o separadas por comas):\nEjemplo:\nJTC000152512270\nJTC000169117449\nJTC000155632773`}
+                disabled={processingBatch}
+                className={`w-full p-3.5 rounded-2xl text-xs md:text-sm font-mono focus:outline-none transition-all shadow-inner custom-scrollbar ${
+                  returnMode === 'PROVEEDOR'
+                    ? 'bg-rose-950/30 border-2 border-rose-500/60 focus:border-rose-400 focus:ring-2 focus:ring-rose-500/30 text-rose-100 placeholder:text-rose-400/40'
+                    : 'bg-slate-950/80 border border-white/15 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 text-white placeholder:text-slate-500'
+                }`}
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Guías identificadas:</span>
+                <span className={`font-mono font-bold px-2 py-0.5 rounded-md ${
+                  detectedGuides.length > 0
+                    ? (returnMode === 'PROVEEDOR' ? 'bg-rose-500/20 text-rose-300' : 'bg-blue-500/20 text-blue-300')
+                    : 'bg-slate-800 text-slate-500'
+                }`}>
+                  {detectedGuides.length}
+                </span>
+                {detectedGuides.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setBatchInput(''); setBatchResult(null); }}
+                    className="text-[11px] text-slate-500 hover:text-slate-300 underline ml-1"
+                  >
+                    Borrar texto
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleBatchReturn}
+                disabled={processingBatch || detectedGuides.length === 0}
+                className={`touch-target px-5 py-2.5 rounded-2xl disabled:opacity-40 text-white text-xs sm:text-sm font-semibold transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed ${
+                  returnMode === 'PROVEEDOR'
+                    ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30'
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+                }`}
+              >
+                {processingBatch ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Procesando lote de {detectedGuides.length} guías...</span>
+                  </>
+                ) : returnMode === 'PROVEEDOR' ? (
+                  <>
+                    <Truck className="w-4 h-4" />
+                    <span>Procesar {detectedGuides.length || ''} Guías a Proveedor</span>
+                  </>
+                ) : (
+                  <>
+                    <Package className="w-4 h-4" />
+                    <span>Reingresar {detectedGuides.length || ''} Guías a Bodega</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Batch Result Summary Banner */}
+            {batchResult && (
+              <div className={`p-3.5 rounded-2xl border text-xs space-y-2 ${
+                batchResult.fallidos_count > 0 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    {batchResult.message}
+                  </span>
+                  <span className="font-mono text-[11px] text-slate-400">
+                    Éxito: <strong className="text-emerald-400">{batchResult.exitosos_count}</strong> | Novedades: <strong className="text-amber-400">{batchResult.fallidos_count}</strong>
+                  </span>
+                </div>
+
+                {batchResult.fallidos && batchResult.fallidos.length > 0 && (
+                  <div className="pt-2 border-t border-white/5 space-y-1">
+                    <p className="text-[11px] font-semibold text-amber-300">Guías que no se pudieron procesar:</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                      {batchResult.fallidos.map((f, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-slate-950/80 border border-amber-500/30 text-[10px] font-mono text-amber-200">
+                          {f.guia} ({f.motivo})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Live Feedback of Last Single Scan */}
+        {scanInputType === 'individual' && lastScannedReturn && (
+          <div className={`mt-3.5 p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn ${
+            lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR'
+              ? 'bg-rose-500/10 border-rose-500/30'
+              : 'bg-emerald-500/10 border-emerald-500/30'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl shrink-0 ${
+                lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR'
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : 'bg-emerald-500/20 text-emerald-400'
+              }`}>
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono font-bold text-white text-sm">
+                    {lastScannedReturn.guia}
+                  </span>
+                  <Badge variant={lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'red' : 'emerald'} className="text-[10px]">
+                    {lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'DEVUELTO A PROVEEDOR' : 'EN BODEGA'}
+                  </Badge>
+                  <span className="text-[11px] text-slate-400">
+                    Zona: <strong className="text-slate-200">{lastScannedReturn.zona_nombre}</strong>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Retirado con éxito de la ruta de: <strong className="text-amber-400">{lastScannedReturn.domiciliario_anterior}</strong>
+                </p>
+              </div>
+            </div>
+            <div className={`text-left sm:text-right text-[11px] font-mono shrink-0 ${
+              lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'text-rose-400' : 'text-emerald-400'
+            }`}>
+              {lastScannedReturn.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'Devuelto al Proveedor' : 'Devuelto a Bodega'}
+            </div>
+          </div>
+        )}
+
+        {/* Tray of recent returns in current session */}
+        {recentReturns.length > 1 && (
+          <div className="mt-3.5 pt-3 border-t border-white/5 flex items-center gap-2 overflow-x-auto custom-scrollbar text-xs">
+            <span className="text-[11px] font-medium text-slate-400 shrink-0">Recientes en sesión ({recentReturns.length}):</span>
+            {recentReturns.map((item, idx) => (
+              <div
+                key={`${item.guia}-${idx}`}
+                className="px-2.5 py-1 rounded-xl bg-slate-950/60 border border-white/5 flex items-center gap-1.5 shrink-0 text-[11px]"
+              >
+                <span className="font-mono text-blue-400 font-bold">{item.guia}</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-amber-300 truncate max-w-[130px]">{item.domiciliario_anterior}</span>
+                <span className={`text-[10px] font-mono px-1 rounded ${
+                  item.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                }`}>
+                  {item.nuevo_estado === 'DEVUELTO_PROVEEDOR' ? 'PROV' : 'BOD'}
+                </span>
+                <span className="text-slate-500 font-mono text-[10px]">({item.time})</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
 
       {/* Main Content Grid: Drivers List & Reconciliation Table */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -260,16 +791,16 @@ export function ControlConciliacionPage() {
         <GlassCard className="p-5 rounded-3xl border border-white/10 space-y-4">
           <div className="flex items-center justify-between border-b border-white/10 pb-3">
             <h3 className="font-bold text-sm text-white flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-blue-400" />
-              Domiciliarios ({driversList.length})
+              <UserCheck className="w-4 h-4 text-amber-400" />
+              Domiciliarios con Pendientes ({driversList.length})
             </h3>
-            <Badge variant="blue">Rutas iMile</Badge>
+            <Badge variant="amber">En Ruta</Badge>
           </div>
 
           <div className="space-y-2 max-h-[440px] overflow-y-auto custom-scrollbar">
             {driversList.length === 0 ? (
               <div className="p-6 text-center text-slate-500 text-xs">
-                {loading ? 'Cargando domiciliarios...' : 'No hay domiciliarios con entregas. Importa una planilla iMile.'}
+                {loading ? 'Cargando domiciliarios...' : 'No hay domiciliarios con paquetes pendientes en ruta.'}
               </div>
             ) : (
               driversList.map((d) => (
@@ -278,14 +809,14 @@ export function ControlConciliacionPage() {
                   onClick={() => setFilterDriver(filterDriver === d.domiciliario ? 'TODOS' : d.domiciliario)}
                   className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
                     filterDriver === d.domiciliario
-                      ? 'bg-blue-600/20 border-blue-500/50 shadow-lg shadow-blue-500/10'
+                      ? 'bg-amber-600/20 border-amber-500/50 shadow-lg shadow-amber-500/10'
                       : 'bg-slate-900/40 border-white/5 hover:bg-slate-800/40'
                   }`}
                 >
                   <div className="space-y-0.5">
                     <h4 className="font-semibold text-xs text-white flex items-center gap-1.5">
                       <span>{d.domiciliario}</span>
-                      {d.cedula.startsWith('AUTO-DA') && (
+                      {d.cedula && d.cedula.startsWith('AUTO-DA') && (
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">Auto</span>
                       )}
                     </h4>
@@ -296,7 +827,7 @@ export function ControlConciliacionPage() {
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Entregados">
                       {d.total_entregados}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20" title="En Ruta">
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20" title="En Ruta (Pendientes)">
                       {d.total_en_ruta}
                     </span>
                   </div>
@@ -310,7 +841,21 @@ export function ControlConciliacionPage() {
         <GlassCard className="lg:col-span-2 p-5 rounded-3xl border border-white/10 space-y-4">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-white/10 pb-3">
             <div>
-              <h3 className="font-bold text-sm text-white">Historial de Conciliaciones & Entregas iMile</h3>
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <span>Historial de Conciliaciones & Entregas iMile</span>
+                {filterDriver !== 'TODOS' && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-normal text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                    Conductor: {filterDriver}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setFilterDriver('TODOS'); }}
+                      className="hover:text-white ml-0.5"
+                      title="Quitar filtro de conductor"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+              </h3>
               <p className="text-[11px] text-slate-400">Guías asignadas a conductores y registro de horas de entrega</p>
             </div>
 
@@ -338,12 +883,12 @@ export function ControlConciliacionPage() {
               {/* State Filter Buttons */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
-                  onClick={() => setFilterState('TODOS')}
+                  onClick={() => setFilterState('ASIGNADO')}
                   className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    filterState === 'TODOS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                    filterState === 'ASIGNADO' ? 'bg-amber-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
                   }`}
                 >
-                  Todos ({orders.length})
+                  En Ruta ({metrics.total_asignados_en_ruta})
                 </button>
                 <button
                   onClick={() => setFilterState('ENTREGADO')}
@@ -351,15 +896,23 @@ export function ControlConciliacionPage() {
                     filterState === 'ENTREGADO' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
                   }`}
                 >
-                  Entregados
+                  Entregados ({metrics.total_entregados})
                 </button>
                 <button
-                  onClick={() => setFilterState('ASIGNADO')}
+                  onClick={() => setFilterState('DEVUELTO_PROVEEDOR')}
                   className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    filterState === 'ASIGNADO' ? 'bg-amber-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                    filterState === 'DEVUELTO_PROVEEDOR' ? 'bg-rose-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
                   }`}
                 >
-                  En Ruta
+                  Devueltos Prov. ({metrics.total_devueltos_proveedor || 0})
+                </button>
+                <button
+                  onClick={() => setFilterState('TODOS')}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                    filterState === 'TODOS' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                  }`}
+                >
+                  Todos ({orders.length})
                 </button>
                 <button
                   onClick={() => setFilterState('PENDIENTE_PAGO')}
@@ -430,8 +983,8 @@ export function ControlConciliacionPage() {
                         <Badge variant="blue">{o.proveedor_entrega || 'iMile'}</Badge>
                       </td>
                       <td data-label="Estado" className="p-3">
-                        <Badge variant={o.estado === 'ENTREGADO' ? 'emerald' : o.estado === 'ASIGNADO' ? 'amber' : 'titanium'}>
-                          {o.estado}
+                        <Badge variant={o.estado === 'ENTREGADO' ? 'emerald' : o.estado === 'ASIGNADO' ? 'amber' : o.estado === 'DEVUELTO_PROVEEDOR' ? 'red' : 'titanium'}>
+                          {o.estado === 'DEVUELTO_PROVEEDOR' ? 'DEVUELTO PROV.' : o.estado}
                         </Badge>
                       </td>
                       <td data-label="Pago" className="p-3 text-right font-mono">

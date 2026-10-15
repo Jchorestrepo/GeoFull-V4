@@ -108,48 +108,44 @@ export function ExcelUploader({ onBatchComplete }) {
     setProgress(0);
 
     const total = parsedRows.length;
-    let completed = 0;
     let exitososCount = 0;
     let fueraZonaCount = 0;
     let noLimpiadosCount = 0;
+    const CHUNK_SIZE = 100;
 
-    for (let i = 0; i < total; i++) {
-      const row = parsedRows[i];
-      const payload = {
-        guia: row[mappingVariant.guia] || `GUIA-${i + 1}`,
-        direccion_original: row[mappingVariant.direccion_original] || '',
-        cliente: mappingVariant.cliente ? row[mappingVariant.cliente] : null,
-        telefono_cliente: mappingVariant.telefono_cliente ? row[mappingVariant.telefono_cliente] : null,
+    const token = localStorage.getItem('v4_token') || localStorage.getItem('token');
+    const headers = {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Tenant-ID': tenantId
+    };
+
+    for (let i = 0; i < total; i += CHUNK_SIZE) {
+      const chunkRows = parsedRows.slice(i, i + CHUNK_SIZE);
+      const items = chunkRows.map((row, idx) => ({
+        guia: String(row[mappingVariant.guia] || `GUIA-${i + idx + 1}`).trim(),
+        direccion_original: String(row[mappingVariant.direccion_original] || '').trim(),
+        cliente: mappingVariant.cliente ? String(row[mappingVariant.cliente] || '') : null,
+        telefono_cliente: mappingVariant.telefono_cliente ? String(row[mappingVariant.telefono_cliente] || '') : null,
         datos_extra: row
-      };
+      })).filter(it => it.direccion_original !== '');
 
-      if (payload.direccion_original) {
+      const skippedCount = chunkRows.length - items.length;
+      noLimpiadosCount += skippedCount;
+
+      if (items.length > 0) {
         try {
-          const token = localStorage.getItem('token');
-          const res = await axios.post('/api/v1/orders/process-single', payload, {
-            headers: {
-              Authorization: token ? `Bearer ${token}` : '',
-              'X-Tenant-ID': tenantId
-            }
-          });
-
-          const orderData = res.data;
-          if (orderData.estado === 'FUERA_DE_ZONA') {
-            fueraZonaCount++;
-          } else if (!orderData.direccion_limpia || orderData.estado === 'REQUIERE_REVISIÓN') {
-            noLimpiadosCount++;
-          } else {
-            exitososCount++;
-          }
+          const res = await axios.post('/api/v1/orders/process-batch', { items }, { headers });
+          const batchData = res.data;
+          exitososCount += batchData.exitosos_count || 0;
+          fueraZonaCount += batchData.fuera_zona_count || 0;
+          noLimpiadosCount += batchData.no_limpiados_count || 0;
         } catch (err) {
-          console.error("Error procesando fila", i, err);
-          noLimpiadosCount++;
+          console.error("Error procesando lote de importación", i, err);
+          noLimpiadosCount += items.length;
         }
-      } else {
-        noLimpiadosCount++;
       }
 
-      completed++;
+      const completed = Math.min(i + CHUNK_SIZE, total);
       setProgress(Math.round((completed / total) * 100));
     }
 

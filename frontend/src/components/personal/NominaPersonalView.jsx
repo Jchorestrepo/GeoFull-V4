@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { Badge } from '../ui/Badge';
 import { Toast } from '../ui/Toast';
+import { DriverOrdersAuditModal } from './DriverOrdersAuditModal';
+import * as XLSX from 'xlsx';
 import {
   DollarSign,
   Calendar,
@@ -19,11 +21,18 @@ import {
   Share2,
   MessageSquare,
   Copy,
-  Printer
+  Printer,
+  Search,
+  Download,
+  Building2,
+  Filter,
+  Eye,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import axios from 'axios';
 
-export function NominaPersonalView() {
+export function NominaPersonalView({ initialSearchTerm = '' }) {
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getFirstOfMonthStr = () => {
     const d = new Date();
@@ -85,6 +94,21 @@ export function NominaPersonalView() {
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+
+  // Búsqueda en tiempo real y Filtros Rápidos
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+  const [filterStatus, setFilterStatus] = useState('all'); // all | pending | paid | with_bank | no_bank
+  const [showCustomRange, setShowCustomRange] = useState(false);
+
+  // Modal de Auditoría de Guías Entregadas
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditDriver, setAuditDriver] = useState(null);
+
+  useEffect(() => {
+    if (initialSearchTerm) {
+      setSearchTerm(initialSearchTerm);
+    }
+  }, [initialSearchTerm]);
 
   // Período Persistente / Corte de Nómina
   const [activePeriod, setActivePeriod] = useState(null);
@@ -403,6 +427,75 @@ export function NominaPersonalView() {
   const totalPagado = summaryData?.total_pagado || items.filter(i => i.estado_pago === 'PAGADO').reduce((acc, i) => acc + i.monto_neto, 0);
   const totalPendiente = summaryData?.total_pendiente || items.filter(i => i.estado_pago !== 'PAGADO').reduce((acc, i) => acc + i.monto_neto, 0);
 
+  const pendingItems = items.filter(i => i.estado_pago !== 'PAGADO');
+  const paidItems = items.filter(i => i.estado_pago === 'PAGADO');
+  const withBankItems = items.filter(i => !!i.banco);
+  const noBankItems = items.filter(i => !i.banco);
+
+  const filteredItems = items.filter(item => {
+    if (searchTerm.trim()) {
+      const s = searchTerm.toLowerCase();
+      const matchName = (item.nombre_completo || '').toLowerCase().includes(s);
+      const matchCedula = (item.cedula || '').toLowerCase().includes(s);
+      const matchBank = (item.banco || '').toLowerCase().includes(s);
+      if (!matchName && !matchCedula && !matchBank) return false;
+    }
+    if (filterStatus === 'pending' && item.estado_pago === 'PAGADO') return false;
+    if (filterStatus === 'paid' && item.estado_pago !== 'PAGADO') return false;
+    if (filterStatus === 'with_bank' && !item.banco) return false;
+    if (filterStatus === 'no_bank' && item.banco) return false;
+    return true;
+  });
+
+  const handleExportBankDispersal = () => {
+    const targetList = selectedIds.length > 0
+      ? items.filter(i => selectedIds.includes(i.domiciliario_id))
+      : pendingItems;
+
+    if (targetList.length === 0) {
+      alert("No hay registros pendientes de pago para generar dispersión.");
+      return;
+    }
+
+    const periodLabel = activePeriod ? activePeriod.nombre_periodo : `${fechaInicio} al ${fechaFin}`;
+    const rows = targetList.map((item, idx) => ({
+      'No.': idx + 1,
+      'Cédula / Documento': item.cedula,
+      'Beneficiario': item.nombre_completo,
+      'Banco': item.banco || 'NO REGISTRADO',
+      'Tipo de Cuenta': item.tipo_cuenta || 'Ahorros',
+      'Número de Cuenta': item.cuenta || 'NO REGISTRADA',
+      'Valor Neto a Transferir ($)': item.monto_neto,
+      'Referencia / Período': `Nomina ${periodLabel}`,
+      'Estado': item.estado_pago,
+      'Esquema': item.tipo_remuneracion
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Dispersion_Bancaria");
+    const safeName = periodLabel.replace(/[^a-zA-Z0-9]/g, '_');
+    XLSX.writeFile(wb, `Dispersion_Bancaria_${safeName}.xlsx`);
+
+    setToast({
+      type: 'success',
+      title: 'Dispersión Bancaria Generada',
+      message: `Se descargó el archivo con ${targetList.length} transferencias programadas.`
+    });
+  };
+
+  const handleOpenQuickNovedad = (item) => {
+    fetchDriversList();
+    setNovedadForm({
+      domiciliario_id: item.domiciliario_id,
+      tipo_novedad: 'VALE',
+      monto: '',
+      motivo: `Anticipo a ${item.nombre_completo}`,
+      fecha_novedad: getTodayStr()
+    });
+    setShowNovedadModal(true);
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {toast && (
@@ -415,12 +508,12 @@ export function NominaPersonalView() {
       )}
 
       {/* Persistent Active Period & Corte Header */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-3xl border border-white/10 backdrop-blur-xl">
-        <div className="space-y-1">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-slate-900/60 p-5 rounded-3xl border border-white/10 backdrop-blur-xl">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <h3 className="text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-emerald-400" />
-              Nómina & Control de Pagos por Período
+              Nómina & Control de Pagos
             </h3>
             {activePeriod && (
               <Badge variant={activePeriod.estado === 'PAGADO' ? 'purple' : 'emerald'} className="animate-pulse">
@@ -429,12 +522,12 @@ export function NominaPersonalView() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-300">
             <span className="font-semibold text-purple-300 flex items-center gap-1">
               <Lock className="w-3.5 h-3.5 text-purple-400" />
               {activePeriod ? activePeriod.nombre_periodo : 'Corte Predeterminado'}:
             </span>
-            <span className="font-mono text-white font-bold bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">
+            <span className="font-mono text-white font-bold bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
               {fechaInicio} ➔ {fechaFin}
             </span>
             <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-500/30">
@@ -444,105 +537,117 @@ export function NominaPersonalView() {
           </div>
         </div>
 
-        {/* Control Box: 2 Structured Rows */}
-        <div className="flex flex-col gap-2.5 bg-slate-900/90 p-3 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl w-full lg:w-auto">
-          {/* Línea 1 (Arriba): Cortes Guardados & Fijar Corte */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-            {savedPeriods.length > 0 && (
-              <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-purple-500/40 flex-1 min-w-[260px]">
-                <span className="text-xs text-purple-300 font-bold whitespace-nowrap">Cortes:</span>
-                <select
-                  value={activePeriod ? activePeriod.id : ''}
-                  onChange={(e) => {
-                    const pId = e.target.value;
-                    if (pId === 'NEW') {
-                      const defaultName = formatPeriodName(fechaInicio, fechaFin);
-                      setPeriodForm({
-                        nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
-                        fecha_inicio: fechaInicio,
-                        fecha_fin: fechaFin
-                      });
-                      setShowPeriodModal(true);
-                    } else {
-                      const selected = savedPeriods.find(p => p.id === pId);
-                      if (selected) {
-                        setActivePeriod(selected);
-                        setFechaInicio(selected.fecha_inicio);
-                        setFechaFin(selected.fecha_fin);
-                      }
+        {/* Control Box: Quick Cut Switcher + Advanced Range Button */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 bg-slate-950/80 p-2.5 rounded-2xl border border-white/10 backdrop-blur-xl w-full lg:w-auto">
+          {savedPeriods.length > 0 && (
+            <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-xl border border-purple-500/30 min-w-[220px]">
+              <span className="text-xs text-purple-300 font-bold whitespace-nowrap">Cortes:</span>
+              <select
+                value={activePeriod ? activePeriod.id : ''}
+                onChange={(e) => {
+                  const pId = e.target.value;
+                  if (pId === 'NEW') {
+                    const defaultName = formatPeriodName(fechaInicio, fechaFin);
+                    setPeriodForm({
+                      nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
+                      fecha_inicio: fechaInicio,
+                      fecha_fin: fechaFin
+                    });
+                    setShowPeriodModal(true);
+                  } else {
+                    const selected = savedPeriods.find(p => p.id === pId);
+                    if (selected) {
+                      setActivePeriod(selected);
+                      setFechaInicio(selected.fecha_inicio);
+                      setFechaFin(selected.fecha_fin);
                     }
-                  }}
-                  className="bg-transparent text-white font-bold text-xs w-full outline-none focus:text-purple-300 cursor-pointer truncate"
-                >
-                  {savedPeriods.map(p => (
-                    <option key={p.id} value={p.id} className="bg-slate-900 text-white">
-                      {p.nombre_periodo.startsWith('⚡ ACTUAL') ? p.nombre_periodo : `${p.nombre_periodo} (${p.fecha_inicio} a ${p.fecha_fin}) [${p.estado}]`}
-                    </option>
-                  ))}
-                  <option value="NEW" className="bg-slate-900 text-emerald-400 font-bold">➕ Crear / Fijar Nuevo Corte...</option>
-                </select>
-              </div>
-            )}
-
-            <button
-              onClick={() => {
-                const defaultName = formatPeriodName(fechaInicio, fechaFin);
-                setPeriodForm({
-                  nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
-                  fecha_inicio: fechaInicio,
-                  fecha_fin: fechaFin
-                });
-                setShowPeriodModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-md shadow-purple-500/20 whitespace-nowrap"
-            >
-              <BookmarkPlus className="w-4 h-4" />
-              <span>Fijar Período / Nuevo Corte</span>
-            </button>
-          </div>
-
-          {/* Línea 2 (Abajo): Rango de Fechas (Inicio + Fin juntas) + Filtros */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-xs text-slate-300 font-semibold px-1">
-              <Calendar className="w-4 h-4 text-blue-400" />
-              <span>Rango:</span>
+                  }
+                }}
+                className="bg-transparent text-white font-bold text-xs w-full outline-none focus:text-purple-300 cursor-pointer truncate"
+              >
+                {savedPeriods.map(p => (
+                  <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                    {p.nombre_periodo} [{p.estado}]
+                  </option>
+                ))}
+                <option value="NEW" className="bg-slate-900 text-emerald-400 font-bold">➕ Fijar Nuevo Corte...</option>
+              </select>
             </div>
+          )}
 
-            <div className="flex items-center gap-1.5">
-              <input
-                type="date"
-                value={fechaInicio}
-                onChange={(e) => setFechaInicio(e.target.value)}
-                className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500 cursor-pointer"
-              />
-              <span className="text-slate-500 text-xs font-bold">a</span>
-              <input
-                type="date"
-                value={fechaFin}
-                onChange={(e) => setFechaFin(e.target.value)}
-                className="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-blue-500 cursor-pointer"
-              />
-            </div>
+          <button
+            onClick={() => {
+              const defaultName = formatPeriodName(fechaInicio, fechaFin);
+              setPeriodForm({
+                nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
+                fecha_inicio: fechaInicio,
+                fecha_fin: fechaFin
+              });
+              setShowPeriodModal(true);
+            }}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-md shadow-purple-500/20 whitespace-nowrap"
+          >
+            <BookmarkPlus className="w-4 h-4" />
+            <span>Nuevo Corte</span>
+          </button>
 
-            <label className="flex items-center gap-1.5 text-xs text-slate-300 font-medium px-2 cursor-pointer select-none border-l border-white/10 ml-auto sm:ml-0">
-              <input
-                type="checkbox"
-                checked={includeZero}
-                onChange={(e) => setIncludeZero(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-0 cursor-pointer"
-              />
-              <span>Incluir en $0</span>
-            </label>
-
-            <button
-              onClick={fetchPayroll}
-              className="px-3.5 py-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md shadow-blue-500/20"
-            >
-              Filtrar
-            </button>
-          </div>
+          <button
+            onClick={() => setShowCustomRange(!showCustomRange)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+              showCustomRange
+                ? 'bg-blue-600 text-white border-blue-500'
+                : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Fechas</span>
+            {showCustomRange ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
         </div>
       </div>
+
+      {/* Expandable Custom Date Range Drawer */}
+      {showCustomRange && (
+        <div className="p-4 rounded-2xl bg-slate-950/90 border border-blue-500/30 flex flex-wrap items-center gap-3 text-xs animate-fadeIn">
+          <span className="text-slate-400 font-bold flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-blue-400" />
+            Rango Personalizado de Consulta:
+          </span>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono outline-none focus:border-blue-500 cursor-pointer"
+            />
+            <span className="text-slate-500 font-bold">a</span>
+            <input
+              type="date"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono outline-none focus:border-blue-500 cursor-pointer"
+            />
+          </div>
+
+          <label className="flex items-center gap-1.5 text-slate-300 font-medium px-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeZero}
+              onChange={(e) => setIncludeZero(e.target.checked)}
+              className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-0 cursor-pointer"
+            />
+            <span>Incluir en $0</span>
+          </label>
+
+          <button
+            onClick={fetchPayroll}
+            className="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-md shadow-blue-500/20"
+          >
+            Aplicar Rango
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards (Metrics) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -597,60 +702,108 @@ export function NominaPersonalView() {
         </GlassCard>
       </div>
 
-      {/* Toolbar / Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-white/10">
-        <button
-          onClick={() => {
-            fetchDriversList();
-            setShowNovedadModal(true);
-          }}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all touch-target"
-        >
-          <Plus className="w-4 h-4 text-emerald-400" />
-          <span>Registrar Vale, Bono o Penalidad</span>
-        </button>
+      {/* Main Table Card with Search, Filter Chips, and Bank Dispersal */}
+      <GlassCard className="p-5 rounded-3xl border border-white/10 space-y-4">
+        {/* Search Bar + Dispersal Button Toolbar */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="relative w-full md:w-96">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por Nombre, Cédula o Banco..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-700 text-white font-medium text-xs placeholder:text-slate-500 outline-none focus:border-blue-500 transition-all shadow-inner"
+            />
+          </div>
 
-        {selectedIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 bg-blue-950/80 px-4 py-2 rounded-xl border border-blue-500/40 animate-fadeIn w-full sm:w-auto justify-between sm:justify-start">
-            <span className="text-xs text-blue-300 font-bold">
-              {selectedIds.length} seleccionados
-            </span>
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+            <button
+              onClick={handleExportBankDispersal}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all shadow-lg shadow-emerald-500/10 touch-target"
+              title="Descargar archivo Excel con formato de transferencias bancarias"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Dispersión Bancaria (Excel)</span>
+            </button>
+
             <button
               onClick={() => {
-                setPayTargetDriver(null);
-                setShowPayModal(true);
+                fetchDriversList();
+                setShowNovedadModal(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all touch-target"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all touch-target"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Marcar como PAGADOS</span>
+              <Plus className="w-4 h-4 text-emerald-400" />
+              <span>Registrar Novedad</span>
             </button>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Payroll Table */}
-      <GlassCard className="p-0 overflow-hidden">
-        <div className="overflow-x-auto rt-wrap">
+        {/* Filter Chips & Selection Bar */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 flex-wrap scroll-x-chips">
+            {[
+              { id: 'all', label: `Todos (${items.length})` },
+              { id: 'pending', label: `⏳ Pendientes (${pendingItems.length})` },
+              { id: 'paid', label: `✅ Pagados (${paidItems.length})` },
+              { id: 'with_bank', label: `🏦 Con Banco (${withBankItems.length})` },
+              { id: 'no_bank', label: `⚠️ Sin Banco (${noBankItems.length})` }
+            ].map(chip => (
+              <button
+                key={chip.id}
+                onClick={() => setFilterStatus(chip.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
+                  filterStatus === chip.id
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    : 'bg-slate-900/60 text-slate-400 hover:text-white border border-white/5'
+                }`}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2 bg-blue-950/80 px-3 py-1.5 rounded-xl border border-blue-500/40 animate-fadeIn">
+              <span className="text-xs text-blue-300 font-bold">
+                {selectedIds.length} seleccionados
+              </span>
+              <button
+                onClick={() => {
+                  setPayTargetDriver(null);
+                  setShowPayModal(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all touch-target"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Pagar Seleccionados</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Payroll Table */}
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto custom-scrollbar rt-wrap rounded-2xl border border-white/10 bg-slate-950/40">
           <table className="w-full text-left border-collapse rt">
             <thead>
-              <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/60">
+              <tr className="border-b border-white/10 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-950/80 sticky top-0 z-10 backdrop-blur-md">
                 <th className="p-3.5 w-10 text-center">
                   <input
                     type="checkbox"
                     onChange={handleSelectAll}
-                    checked={items.length > 0 && selectedIds.length === items.length}
+                    checked={filteredItems.length > 0 && selectedIds.length === filteredItems.length}
                     className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-0 cursor-pointer"
                   />
                 </th>
                 <th className="p-3.5">Domiciliario / Conductor</th>
-                <th className="p-3.5">Esquema Pago</th>
+                <th className="p-3.5">Esquema</th>
                 <th className="p-3.5 text-center">Guías Entregadas</th>
-                <th className="p-4 text-right">Tarifa / Salario Fijo</th>
+                <th className="p-4 text-right">Tarifa / Fijo</th>
                 <th className="p-4 text-right">Ajustes / Vales</th>
                 <th className="p-4 text-right font-black">Total a Pagar</th>
-                <th className="p-3.5 text-center">Estado Pago</th>
-                <th className="p-3.5 text-right">Acción / Comprobante</th>
+                <th className="p-3.5 text-center">Estado</th>
+                <th className="p-3.5 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-xs">
@@ -659,18 +812,18 @@ export function NominaPersonalView() {
                   <td colSpan="9" className="p-8 text-center text-slate-400">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                      Calculando resumen de nómina...
+                      Calculando pre-liquidación de nómina...
                     </div>
                   </td>
                 </tr>
-              ) : items.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="p-8 text-center text-slate-500">
-                    No se encontraron entregas ni registros de personal para el período seleccionado.
+                    No se encontraron registros de nómina que coincidan con la búsqueda o filtro aplicado.
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
+                filteredItems.map((item) => {
                   const isPaid = item.estado_pago === 'PAGADO';
                   const isSelected = selectedIds.includes(item.domiciliario_id);
 
@@ -681,108 +834,132 @@ export function NominaPersonalView() {
                         isSelected ? 'bg-blue-950/30' : isPaid ? 'bg-slate-950/40 opacity-75' : ''
                       }`}
                     >
-                    <td data-label="Seleccionar" className="p-3.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(item.domiciliario_id)}
-                        onChange={() => handleSelectOne(item.domiciliario_id)}
-                        className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-0 cursor-pointer"
-                      />
-                    </td>
+                      <td data-label="Seleccionar" className="p-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(item.domiciliario_id)}
+                          onChange={() => handleSelectOne(item.domiciliario_id)}
+                          className="rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-0 cursor-pointer"
+                        />
+                      </td>
 
-                    <td data-label="Domiciliario" className="p-3.5">
-                      <div className="font-bold text-white text-sm">
-                        {item.nombre_completo}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                        <span>CC: {item.cedula}</span>
-                        {renderBankBadge(item.banco, item.cuenta)}
-                      </div>
-                    </td>
-
-                    <td data-label="Esquema" className="p-3.5">
-                      <Badge variant={item.tipo_remuneracion === 'SALARIO_FIJO' ? 'purple' : item.tipo_remuneracion === 'MIXTO' ? 'blue' : 'amber'}>
-                        {item.tipo_remuneracion}
-                      </Badge>
-                    </td>
-
-                    <td data-label="Entregadas" className="p-3.5 text-center font-mono font-bold text-emerald-400 text-sm">
-                      {item.total_entregados} guías
-                    </td>
-
-                    <td data-label="Tarifa/Fijo" className="p-4 text-right font-mono text-slate-300">
-                      {item.tipo_remuneracion === 'SALARIO_FIJO' ? (
-                        <span className="text-purple-300">${Number(item.salario_fijo_aplicado).toLocaleString('es-CO')} (Fijo)</span>
-                      ) : item.tipo_remuneracion === 'MIXTO' ? (
-                        <div>
-                          <span className="text-emerald-400">${Number(item.tarifa_paquete).toLocaleString('es-CO')}/paq</span>
-                          <div className="text-[10px] text-purple-300">+ ${Number(item.salario_fijo_aplicado).toLocaleString('es-CO')} Fijo</div>
+                      <td data-label="Domiciliario" className="p-3.5">
+                        <div className="font-bold text-white text-sm">
+                          {item.nombre_completo}
                         </div>
-                      ) : (
-                        <span className="text-emerald-400">${Number(item.tarifa_paquete).toLocaleString('es-CO')}/paq</span>
-                      )}
-                    </td>
-
-                    <td data-label="Ajustes" className="p-4 text-right font-mono">
-                      {item.descuentos > 0 || item.bonos > 0 ? (
-                        <div>
-                          {item.bonos > 0 && <span className="text-emerald-400 block">+${Number(item.bonos).toLocaleString('es-CO')} (Bono)</span>}
-                          {item.vales_descontados > 0 && <span className="text-amber-400 block">-${Number(item.vales_descontados).toLocaleString('es-CO')} (Vale)</span>}
-                          {item.penalidades > 0 && <span className="text-red-400 block">-${Number(item.penalidades).toLocaleString('es-CO')} (Penalidad)</span>}
+                        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                          <span>CC: {item.cedula}</span>
+                          {renderBankBadge(item.banco, item.cuenta)}
                         </div>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
+                      </td>
 
-                    <td data-label="Total" className="p-4 text-right font-mono font-black text-white text-base">
-                      ${Number(item.monto_neto).toLocaleString('es-CO')}
-                    </td>
+                      <td data-label="Esquema" className="p-3.5">
+                        <Badge variant={item.tipo_remuneracion === 'SALARIO_FIJO' ? 'purple' : item.tipo_remuneracion === 'MIXTO' ? 'blue' : 'amber'}>
+                          {item.tipo_remuneracion}
+                        </Badge>
+                      </td>
 
-                    <td data-label="Estado" className="p-3.5 text-center">
-                      <Badge variant={item.estado_pago === 'PAGADO' ? 'emerald' : 'amber'}>
-                        {item.estado_pago === 'PAGADO' ? 'PAGADO' : 'PENDIENTE'}
-                      </Badge>
-                    </td>
-
-                    <td data-label="Acción" className="p-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      <td data-label="Entregadas" className="p-3.5 text-center">
                         <button
                           onClick={() => {
-                            setReceiptItem(item);
-                            setShowReceiptModal(true);
+                            setAuditDriver({
+                              id: item.domiciliario_id,
+                              name: item.nombre_completo,
+                              guias: item.total_entregados
+                            });
+                            setShowAuditModal(true);
                           }}
-                          title="Ver Recibo / Enviar por WhatsApp"
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-[11px] font-semibold transition-all touch-target"
+                          title="Clic para ver detalle y auditoría de guías entregadas"
+                          className="px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono font-bold text-xs inline-flex items-center gap-1.5 transition-all group hover:scale-105"
                         >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Recibo</span>
+                          <span>{item.total_entregados} guías</span>
+                          <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                         </button>
+                      </td>
 
-                        <button
-                          onClick={() => handleOpenWhatsApp(item)}
-                          title="Enviar resumen directo por WhatsApp"
-                          className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 transition-all touch-target"
-                        >
-                          <Share2 className="w-4 h-4" />
-                        </button>
+                      <td data-label="Tarifa/Fijo" className="p-4 text-right font-mono text-slate-300">
+                        {item.tipo_remuneracion === 'SALARIO_FIJO' ? (
+                          <span className="text-purple-300">${Number(item.salario_fijo_aplicado).toLocaleString('es-CO')} (Fijo)</span>
+                        ) : item.tipo_remuneracion === 'MIXTO' ? (
+                          <div>
+                            <span className="text-emerald-400">${Number(item.tarifa_paquete).toLocaleString('es-CO')}/paq</span>
+                            <div className="text-[10px] text-purple-300">+ ${Number(item.salario_fijo_aplicado).toLocaleString('es-CO')} Fijo</div>
+                          </div>
+                        ) : (
+                          <span className="text-emerald-400">${Number(item.tarifa_paquete).toLocaleString('es-CO')}/paq</span>
+                        )}
+                      </td>
 
-                        {item.estado_pago !== 'PAGADO' && (
+                      <td data-label="Ajustes" className="p-4 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          {item.descuentos > 0 || item.bonos > 0 ? (
+                            <div className="font-mono text-xs">
+                              {item.bonos > 0 && <span className="text-emerald-400 block">+${Number(item.bonos).toLocaleString('es-CO')} (Bono)</span>}
+                              {item.vales_descontados > 0 && <span className="text-amber-400 block">-${Number(item.vales_descontados).toLocaleString('es-CO')} (Vale)</span>}
+                              {item.penalidades > 0 && <span className="text-red-400 block">-${Number(item.penalidades).toLocaleString('es-CO')} (Penalidad)</span>}
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 font-mono">-</span>
+                          )}
+                          <button
+                            onClick={() => handleOpenQuickNovedad(item)}
+                            title="Registrar Vale o Anticipo para este conductor"
+                            className="text-[10px] text-amber-400/80 hover:text-amber-300 hover:underline flex items-center gap-0.5"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Vale</span>
+                          </button>
+                        </div>
+                      </td>
+
+                      <td data-label="Total" className="p-4 text-right font-mono font-black text-white text-base">
+                        ${Number(item.monto_neto).toLocaleString('es-CO')}
+                      </td>
+
+                      <td data-label="Estado" className="p-3.5 text-center">
+                        <Badge variant={item.estado_pago === 'PAGADO' ? 'emerald' : 'amber'}>
+                          {item.estado_pago === 'PAGADO' ? 'PAGADO' : 'PENDIENTE'}
+                        </Badge>
+                      </td>
+
+                      <td data-label="Acción" className="p-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
                           <button
                             onClick={() => {
-                              setPayTargetDriver(item.domiciliario_id);
-                              setShowPayModal(true);
+                              setReceiptItem(item);
+                              setShowReceiptModal(true);
                             }}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-md shadow-emerald-500/20 touch-target"
+                            title="Ver Recibo / Voucher de Pago"
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-[11px] font-semibold transition-all touch-target"
                           >
-                            Pagar
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Recibo</span>
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+
+                          <button
+                            onClick={() => handleOpenWhatsApp(item)}
+                            title="Enviar resumen directo por WhatsApp"
+                            className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 transition-all touch-target"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
+
+                          {item.estado_pago !== 'PAGADO' && (
+                            <button
+                              onClick={() => {
+                                setPayTargetDriver(item.domiciliario_id);
+                                setShowPayModal(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-md shadow-emerald-500/20 touch-target"
+                            >
+                              Pagar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -869,13 +1046,13 @@ export function NominaPersonalView() {
             </div>
 
             {/* Acciones del Comprobante */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
               <button
                 onClick={() => handleOpenWhatsApp(receiptItem)}
                 className="py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 touch-target"
               >
                 <Share2 className="w-4 h-4" />
-                <span>Enviar por WhatsApp</span>
+                <span>WhatsApp</span>
               </button>
 
               <button
@@ -884,6 +1061,14 @@ export function NominaPersonalView() {
               >
                 <Copy className="w-4 h-4 text-blue-400" />
                 <span>Copiar Texto</span>
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                className="py-3 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 font-bold text-xs border border-purple-500/40 transition-all flex items-center justify-center gap-2 touch-target"
+              >
+                <Printer className="w-4 h-4 text-purple-400" />
+                <span>Imprimir / PDF</span>
               </button>
             </div>
           </GlassCard>
@@ -1183,6 +1368,20 @@ export function NominaPersonalView() {
             </div>
           </GlassCard>
         </div>
+      )}
+
+      {/* MODAL AUDITORÍA DE GUÍAS ENTREGADAS POR CONDUCTOR */}
+      {showAuditModal && auditDriver && (
+        <DriverOrdersAuditModal
+          driverId={auditDriver.id}
+          driverName={auditDriver.name}
+          fechaInicio={fechaInicio}
+          fechaFin={fechaFin}
+          onClose={() => {
+            setShowAuditModal(false);
+            setAuditDriver(null);
+          }}
+        />
       )}
     </div>
   );

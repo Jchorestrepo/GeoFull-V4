@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 import uuid
 import json
+import re
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Header, Query, status, Depends
 from pydantic import BaseModel
@@ -29,8 +30,23 @@ from datetime import datetime, timezone, timedelta
 BOGOTA_TZ = timezone(timedelta(hours=-5))
 
 class DriverUnifyRequest(BaseModel):
-    cedula_real: str
+    cedula_real: Optional[str] = None
     driver_ids: List[uuid.UUID]
+    nombre_limpio: Optional[str] = None
+
+
+class ReturnToWarehouseRequest(BaseModel):
+    barcode: str
+    motivo: Optional[str] = "NO_ENTREGADO_RUTA"
+    observaciones: Optional[str] = None
+    tipo_destino: Optional[str] = "BODEGA"  # "BODEGA" o "PROVEEDOR"
+
+
+class BatchReturnRequest(BaseModel):
+    barcodes: List[str]
+    tipo_destino: Optional[str] = "PROVEEDOR"  # "BODEGA" o "PROVEEDOR"
+    motivo: Optional[str] = "DEVOLUCION_MASIVA"
+    observaciones: Optional[str] = None
 
 
 def parse_local_timestamp(raw_val: Optional[Any]) -> Optional[datetime]:
@@ -279,96 +295,560 @@ async def process_batch_routes(
 @router.post("/drivers/unify")
 async def unify_drivers(req: DriverUnifyRequest, x_tenant_id: str = Depends(get_tenant_id)):
     """
-    Unifica dos o más registros de domiciliarios que compartan la misma cédula real.
-    Combina sus alias_nombres y reasigna todas sus entregas históricas al conductor principal.
+    Unifica dos o más registros de domiciliarios que correspondan a la misma persona.
+    Combina sus alias_nombres, reasigna todos sus pedidos históricos, liquidaciones,
+    adelantos y conciliaciones al conductor principal, y elimina los duplicados secundarios.
     """
     if len(req.driver_ids) < 2:
         raise HTTPException(status_code=400, detail="Se requieren al menos dos domiciliarios para unificar")
 
     async for session in get_db_session(x_tenant_id):
-        primary_id = req.driver_ids[0]
-        secondary_ids = req.driver_ids[1:]
+        try:
+            primary_id = req.driver_ids[0]
+            secondary_ids = req.driver_ids[1:]
 
-        # 1. Obtener nombres y alias de los domiciliarios secundarios
-        get_sec_sql = text("""
-            SELECT id, nombre_completo, alias_nombres
-            FROM personal_conductores
-            WHERE tenant_id = :tenant_id AND id = ANY(:sec_ids)
-        """)
-        res_sec = await session.execute(get_sec_sql, {"tenant_id": x_tenant_id, "sec_ids": secondary_ids})
-        sec_rows = res_sec.fetchall()
+            # 1. Obtener nombres y alias de los domiciliarios secundarios
+            get_sec_sql = text("""
+                SELECT id, nombre_completo, alias_nombres, cedula
+                FROM personal_conductores
+                WHERE tenant_id = :tenant_id AND id = ANY(:sec_ids)
+            """)
+            res_sec = await session.execute(get_sec_sql, {"tenant_id": x_tenant_id, "sec_ids": secondary_ids})
+            sec_rows = res_sec.fetchall()
 
-        all_aliases = set()
-        for r in sec_rows:
-            all_aliases.add(r.nombre_completo)
-            if r.alias_nombres:
+            all_aliases = set()
+            for r in sec_rows:
+                all_aliases.add(r.nombre_completo)
+                if r.alias_nombres:
+                    try:
+                        aliases_list = json.loads(r.alias_nombres) if isinstance(r.alias_nombres, str) else r.alias_nombres
+                        for a in aliases_list:
+                            all_aliases.add(a)
+                    except Exception:
+                        pass
+
+            # 2. Consultar el conductor principal
+            get_prim_sql = text("SELECT cedula, nombre_completo, alias_nombres FROM personal_conductores WHERE tenant_id = :tenant_id AND id = :id LIMIT 1")
+            res_prim = await session.execute(get_prim_sql, {"tenant_id": x_tenant_id, "id": primary_id})
+            prim_row = res_prim.first()
+
+            if not prim_row:
+                raise HTTPException(status_code=404, detail="El conductor principal seleccionado no existe.")
+
+            if prim_row.alias_nombres:
                 try:
-                    aliases_list = json.loads(r.alias_nombres) if isinstance(r.alias_nombres, str) else r.alias_nombres
+                    aliases_list = json.loads(prim_row.alias_nombres) if isinstance(prim_row.alias_nombres, str) else prim_row.alias_nombres
                     for a in aliases_list:
                         all_aliases.add(a)
                 except Exception:
                     pass
+            all_aliases.add(prim_row.nombre_completo)
 
-        # 2. Actualizar el conductor principal con la cédula real y los nuevos alias acumulados
-        get_prim_sql = text("SELECT alias_nombres FROM personal_conductores WHERE tenant_id = :tenant_id AND id = :id LIMIT 1")
-        res_prim = await session.execute(get_prim_sql, {"tenant_id": x_tenant_id, "id": primary_id})
-        prim_row = res_prim.first()
+            target_cedula = req.cedula_real.strip() if (req.cedula_real and req.cedula_real.strip()) else prim_row.cedula
+            target_nombre = req.nombre_limpio.strip() if (req.nombre_limpio and req.nombre_limpio.strip()) else prim_row.nombre_completo
 
-        if prim_row and prim_row.alias_nombres:
-            try:
-                aliases_list = json.loads(prim_row.alias_nombres) if isinstance(prim_row.alias_nombres, str) else prim_row.alias_nombres
-                for a in aliases_list:
-                    all_aliases.add(a)
-            except Exception:
-                pass
+            # 3. Validar que la cédula no pertenezca a OTRO conductor ajeno al grupo
+            if target_cedula and not target_cedula.startswith("AUTO-DA"):
+                check_conflict_sql = text("""
+                    SELECT id, nombre_completo
+                    FROM personal_conductores
+                    WHERE tenant_id = :tenant_id
+                      AND cedula = :cedula
+                      AND id != :primary_id
+                      AND NOT (id = ANY(:sec_ids))
+                    LIMIT 1
+                """)
+                res_conflict = await session.execute(check_conflict_sql, {
+                    "tenant_id": x_tenant_id,
+                    "cedula": target_cedula,
+                    "primary_id": primary_id,
+                    "sec_ids": secondary_ids
+                })
+                conflict = res_conflict.first()
+                if conflict:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"La cédula '{target_cedula}' ya pertenece a otro conductor registrado: {conflict.nombre_completo}."
+                    )
 
-        update_prim_sql = text("""
-            UPDATE personal_conductores
-            SET cedula = :cedula_real,
-                alias_nombres = CAST(:aliases AS jsonb)
-            WHERE tenant_id = :tenant_id AND id = :id
+            # 4. Liberar temporalmente las cédulas de los secundarios para evitar violación de UNIQUE(tenant_id, cedula)
+            free_cedulas_sql = text("""
+                UPDATE personal_conductores
+                SET cedula = 'MERGED-' || id::text
+                WHERE tenant_id = :tenant_id AND id = ANY(:sec_ids)
+            """)
+            await session.execute(free_cedulas_sql, {"tenant_id": x_tenant_id, "sec_ids": secondary_ids})
+
+            # 5. Actualizar conductor principal con la cédula y nombre consolidado
+            update_prim_sql = text("""
+                UPDATE personal_conductores
+                SET cedula = :cedula_real,
+                    nombre_completo = :nombre_limpio,
+                    alias_nombres = CAST(:aliases AS jsonb)
+                WHERE tenant_id = :tenant_id AND id = :id
+            """)
+            await session.execute(update_prim_sql, {
+                "tenant_id": x_tenant_id,
+                "id": primary_id,
+                "cedula_real": target_cedula,
+                "nombre_limpio": target_nombre,
+                "aliases": json.dumps(list(all_aliases))
+            })
+
+            # 6. Reasignar pedidos al conductor principal
+            reassign_orders_sql = text("""
+                UPDATE pedidos
+                SET domiciliario_id = :primary_id,
+                    domiciliario_nombre = :nombre_limpio
+                WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            """)
+            await session.execute(reassign_orders_sql, {
+                "tenant_id": x_tenant_id,
+                "primary_id": primary_id,
+                "sec_ids": secondary_ids,
+                "nombre_limpio": target_nombre
+            })
+
+            # 7. Reasignar liquidaciones al conductor principal
+            await session.execute(text("""
+                UPDATE liquidaciones
+                SET domiciliario_id = :primary_id
+                WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            """), {"tenant_id": x_tenant_id, "primary_id": primary_id, "sec_ids": secondary_ids})
+
+            # 8. Reasignar conciliaciones diarias al conductor principal
+            await session.execute(text("""
+                UPDATE conciliaciones_diarias
+                SET domiciliario_id = :primary_id
+                WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            """), {"tenant_id": x_tenant_id, "primary_id": primary_id, "sec_ids": secondary_ids})
+
+            # 9. Reasignar adelantos y préstamos al conductor principal
+            await session.execute(text("""
+                UPDATE adelantos_prestamos
+                SET domiciliario_id = :primary_id
+                WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            """), {"tenant_id": x_tenant_id, "primary_id": primary_id, "sec_ids": secondary_ids})
+
+            # 10. Reasignar novedades de nómina al conductor principal
+            await session.execute(text("""
+                UPDATE novedades_nomina
+                SET domiciliario_id = :primary_id
+                WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            """), {"tenant_id": x_tenant_id, "primary_id": primary_id, "sec_ids": secondary_ids})
+
+            # 11. Eliminar los registros de domiciliarios secundarios ya unificados
+            delete_sec_sql = text("DELETE FROM personal_conductores WHERE tenant_id = :tenant_id AND id = ANY(:sec_ids)")
+            await session.execute(delete_sec_sql, {"tenant_id": x_tenant_id, "sec_ids": secondary_ids})
+
+            await session.commit()
+
+            return {
+                "status": "ok",
+                "message": f"Conductores unificados exitosamente bajo '{target_nombre}' (CC: {target_cedula})",
+                "primary_id": primary_id,
+                "nombre_limpio": target_nombre,
+                "cedula_real": target_cedula,
+                "alias_acumulados": list(all_aliases)
+            }
+        except HTTPException:
+            await session.rollback()
+            raise
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(status_code=400, detail=f"No se pudo unificar el grupo: {str(e)}")
+
+
+def clean_driver_base_name(raw_name: str) -> str:
+    if not raw_name:
+        return ""
+    # Remover plecas y sufijos numéricos o de plataforma (|20050600048, etc.)
+    name = raw_name.split("|")[0]
+    # Remover extensiones comunes (.pcp, .csv, etc.)
+    name = re.sub(r'(?i)\.(pcp|csv|xlsx|tmp)\b', '', name)
+    # Limpiar espacios
+    name = re.sub(r'\s+', ' ', name).strip().upper()
+    return name
+
+
+@router.get("/drivers/duplicates-suggestions")
+async def get_driver_duplicates_suggestions(x_tenant_id: str = Depends(get_tenant_id)):
+    """
+    Analiza y detecta conductores duplicados basados en nombres base limpios (sin .pcp, |sufijos de plataforma).
+    Devuelve grupos sugeridos para unificación ágil en 1 clic.
+    """
+    async for session in get_db_session(x_tenant_id):
+        sql = text("""
+            SELECT c.id, c.nombre_completo, c.cedula, c.telefono, c.banco, c.cuenta,
+                   COALESCE(c.tarifa_paquete, 2000.0) as tarifa_paquete,
+                   COUNT(p.id) FILTER (WHERE p.estado = 'ENTREGADO') as total_entregados,
+                   COUNT(p.id) FILTER (WHERE p.estado = 'ASIGNADO') as total_en_ruta
+            FROM personal_conductores c
+            LEFT JOIN pedidos p ON p.domiciliario_id = c.id AND p.tenant_id = c.tenant_id
+            WHERE c.tenant_id = :tenant_id
+            GROUP BY c.id, c.nombre_completo, c.cedula, c.telefono, c.banco, c.cuenta, c.tarifa_paquete
+            ORDER BY c.nombre_completo ASC
         """)
-        await session.execute(update_prim_sql, {
-            "tenant_id": x_tenant_id,
-            "id": primary_id,
-            "cedula_real": req.cedula_real,
-            "aliases": json.dumps(list(all_aliases))
-        })
+        res = await session.execute(sql, {"tenant_id": x_tenant_id})
+        rows = res.fetchall()
 
-        # 3. Reasignar todos los pedidos de los conductores secundarios al principal
-        reassign_orders_sql = text("""
+        groups_map: Dict[str, List[Dict[str, Any]]] = {}
+        for r in rows:
+            base = clean_driver_base_name(r.nombre_completo)
+            if not base:
+                continue
+            item = {
+                "id": str(r.id),
+                "nombre_completo": r.nombre_completo,
+                "cedula": r.cedula,
+                "telefono": r.telefono,
+                "banco": r.banco,
+                "cuenta": r.cuenta,
+                "tarifa_paquete": float(r.tarifa_paquete),
+                "total_entregados": int(r.total_entregados or 0),
+                "total_en_ruta": int(r.total_en_ruta or 0),
+                "is_temp_cedula": r.cedula.startswith("AUTO-DA")
+            }
+            groups_map.setdefault(base, []).append(item)
+
+        suggestions = []
+        for base_name, group in groups_map.items():
+            if len(group) >= 2:
+                # Priorizar candidato principal:
+                # 1. Cédula real (no AUTO-DA)
+                # 2. Mayor cantidad de entregas
+                # 3. Nombre más corto / limpio
+                sorted_group = sorted(
+                    group,
+                    key=lambda d: (
+                        0 if not d["is_temp_cedula"] else 1,
+                        -d["total_entregados"],
+                        len(d["nombre_completo"])
+                    )
+                )
+                primary = sorted_group[0]
+                duplicates = sorted_group[1:]
+                suggestions.append({
+                    "base_name": base_name,
+                    "count": len(group),
+                    "primary_driver": primary,
+                    "duplicates": duplicates,
+                    "driver_ids": [d["id"] for d in sorted_group],
+                    "total_entregados_combinados": sum(d["total_entregados"] for d in sorted_group)
+                })
+
+        suggestions.sort(key=lambda s: (-s["total_entregados_combinados"], s["base_name"]))
+
+        return {
+            "total_groups": len(suggestions),
+            "total_duplicates": sum(len(s["duplicates"]) for s in suggestions),
+            "suggestions": suggestions
+        }
+
+
+@router.post("/scan-return-to-warehouse")
+async def scan_return_to_warehouse(
+    payload: ReturnToWarehouseRequest,
+    current_user: dict = Depends(get_current_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Escaneo de código de barras para retorno de paquetes no entregados desde la ruta a bodega o devolución al proveedor.
+    - Si tipo_destino == 'PROVEEDOR': estado pasa a 'DEVUELTO_PROVEEDOR'.
+    - Si tipo_destino == 'BODEGA': estado pasa a 'EN_BODEGA'.
+    - Retira la asignación del domiciliario (se le descuenta de sus pendientes en ruta).
+    - Registra evento de auditoría en historial_pedidos.
+    """
+    barcode = payload.barcode.strip()
+    if not barcode:
+        raise HTTPException(status_code=400, detail="Debe ingresar o escanear un número de guía válido.")
+
+    is_proveedor = (payload.tipo_destino or "").strip().upper() == "PROVEEDOR"
+    target_estado = "DEVUELTO_PROVEEDOR" if is_proveedor else "EN_BODEGA"
+    target_evento = "DEVOLUCION_PROVEEDOR" if is_proveedor else "DEVOLUCION_A_BODEGA"
+
+    async for session in get_db_session(x_tenant_id):
+        if x_tenant_id == "global":
+            find_sql = text("""
+                SELECT p.id, p.tenant_id, p.guia, p.estado, p.domiciliario_id, p.domiciliario_nombre,
+                       p.zona_id, p.zona_nombre, p.cliente, p.direccion_original,
+                       c.nombre_completo as conductor_personal
+                FROM pedidos p
+                LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+                WHERE (p.guia = :guia OR LOWER(p.guia) = LOWER(:guia))
+                ORDER BY CASE WHEN p.estado = 'ASIGNADO' THEN 0 ELSE 1 END ASC
+                LIMIT 1
+            """)
+            res = await session.execute(find_sql, {"guia": barcode})
+        else:
+            find_sql = text("""
+                SELECT p.id, p.tenant_id, p.guia, p.estado, p.domiciliario_id, p.domiciliario_nombre,
+                       p.zona_id, p.zona_nombre, p.cliente, p.direccion_original,
+                       c.nombre_completo as conductor_personal
+                FROM pedidos p
+                LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+                WHERE p.tenant_id = :tenant_id 
+                  AND (p.guia = :guia OR LOWER(p.guia) = LOWER(:guia))
+                ORDER BY CASE WHEN p.estado = 'ASIGNADO' THEN 0 ELSE 1 END ASC
+                LIMIT 1
+            """)
+            res = await session.execute(find_sql, {"tenant_id": x_tenant_id, "guia": barcode})
+
+        pedido = res.first()
+
+        if not pedido:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se encontró ningún paquete con la guía '{barcode}'."
+            )
+
+        if pedido.estado == 'ENTREGADO':
+            driver_name = pedido.conductor_personal or pedido.domiciliario_nombre or "conductor"
+            raise HTTPException(
+                status_code=400,
+                detail=f"La guía '{pedido.guia}' ya figura como ENTREGADA por '{driver_name}'. No puede ingresarse a devolución sin anular la entrega."
+            )
+
+        if is_proveedor and pedido.estado == 'DEVUELTO_PROVEEDOR':
+            raise HTTPException(
+                status_code=400,
+                detail=f"El paquete '{pedido.guia}' ya se encuentra registrado como DEVUELTO AL PROVEEDOR."
+            )
+
+        if not is_proveedor and pedido.estado == 'EN_BODEGA' and not pedido.domiciliario_id and not pedido.domiciliario_nombre:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El paquete '{pedido.guia}' ya se encuentra actualmente en Bodega (no estaba asignado a ruta)."
+            )
+
+        prev_driver = pedido.conductor_personal or pedido.domiciliario_nombre or "SIN ASIGNAR"
+        user_name = current_user.get("nombre") or current_user.get("email") or "Operador Logístico"
+        target_tenant = pedido.tenant_id or x_tenant_id
+
+        obs_tag = f" [Devuelto al Proveedor de ruta de {prev_driver}]" if is_proveedor else f" [Devuelto a Bodega de ruta de {prev_driver}]"
+        update_sql = text("""
             UPDATE pedidos
-            SET domiciliario_id = :primary_id
-            WHERE tenant_id = :tenant_id AND domiciliario_id = ANY(:sec_ids)
+            SET estado = :target_estado,
+                domiciliario_id = NULL,
+                domiciliario_nombre = NULL,
+                observaciones_entrega = TRIM(COALESCE(observaciones_entrega, '') || :obs_tag),
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = :id AND tenant_id = :target_tenant
+            RETURNING id
         """)
-        await session.execute(reassign_orders_sql, {
-            "tenant_id": x_tenant_id,
-            "primary_id": primary_id,
-            "sec_ids": secondary_ids
+        await session.execute(update_sql, {
+            "id": pedido.id,
+            "target_tenant": target_tenant,
+            "target_estado": target_estado,
+            "obs_tag": obs_tag
         })
 
-        # 4. Eliminar los registros de domiciliarios secundarios ya unificados
-        delete_sec_sql = text("DELETE FROM personal_conductores WHERE tenant_id = :tenant_id AND id = ANY(:sec_ids)")
-        await session.execute(delete_sec_sql, {"tenant_id": x_tenant_id, "sec_ids": secondary_ids})
+        desc_audit = (
+            f"【Devolución al Proveedor】 Paquete devuelto al proveedor por {user_name} (Retirado de {prev_driver})."
+            if is_proveedor
+            else f"【Retorno a Bodega】 Paquete devuelto por {prev_driver} (no entregado en ruta). Reingresado a bodega por {user_name}."
+        )
+
+        await registrar_historial_evento(
+            session=session,
+            tenant_id=target_tenant,
+            pedido_id=pedido.id,
+            guia=pedido.guia,
+            tipo_evento=target_evento,
+            descripcion=desc_audit,
+            estado_anterior=pedido.estado,
+            estado_nuevo=target_estado,
+            usuario_id=current_user.get("id") if current_user.get("id") else None,
+            usuario_nombre=user_name,
+            detalles={
+                "domiciliario_anterior": prev_driver,
+                "zona": pedido.zona_nombre,
+                "tipo_destino": "PROVEEDOR" if is_proveedor else "BODEGA",
+                "motivo": payload.motivo or ("DEVOLUCION_PROVEEDOR" if is_proveedor else "NO_ENTREGADO_RUTA"),
+                "observaciones": payload.observaciones
+            }
+        )
 
         await session.commit()
 
+        success_msg = (
+            f"Paquete {pedido.guia} devuelto al PROVEEDOR. Retirado con éxito de los pendientes de {prev_driver}."
+            if is_proveedor
+            else f"Paquete {pedido.guia} devuelto a BODEGA. Retirado con éxito de los pendientes de {prev_driver}."
+        )
+
         return {
             "status": "ok",
-            "message": f"Conductores unificados exitosamente bajo la cédula {req.cedula_real}",
-            "primary_id": primary_id,
-            "alias_acumulados": list(all_aliases)
+            "pedido_id": str(pedido.id),
+            "guia": pedido.guia,
+            "domiciliario_anterior": prev_driver,
+            "zona_nombre": pedido.zona_nombre or "Sin Zona",
+            "cliente": pedido.cliente or "Sin Cliente",
+            "direccion": pedido.direccion_original or "",
+            "estado_anterior": pedido.estado,
+            "nuevo_estado": target_estado,
+            "tipo_destino": "PROVEEDOR" if is_proveedor else "BODEGA",
+            "message": success_msg
+        }
+
+
+@router.post("/batch-return-to-warehouse")
+async def batch_return_to_warehouse(
+    payload: BatchReturnRequest,
+    current_user: dict = Depends(get_current_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Procesamiento en lote de guías copiadas y pegadas (desde Excel o texto)
+    para devolución a proveedor ('DEVUELTO_PROVEEDOR') o reingreso a bodega ('EN_BODEGA').
+    """
+    clean_barcodes = [b.strip() for b in payload.barcodes if b and b.strip()]
+    if not clean_barcodes:
+        raise HTTPException(status_code=400, detail="No se enviaron números de guía válidos en el lote.")
+
+    seen = set()
+    deduped_barcodes = []
+    for b in clean_barcodes:
+        if b.upper() not in seen:
+            seen.add(b.upper())
+            deduped_barcodes.append(b)
+
+    is_proveedor = (payload.tipo_destino or "").strip().upper() == "PROVEEDOR"
+    target_estado = "DEVUELTO_PROVEEDOR" if is_proveedor else "EN_BODEGA"
+    target_evento = "DEVOLUCION_PROVEEDOR" if is_proveedor else "DEVOLUCION_A_BODEGA"
+    user_name = current_user.get("nombre") or current_user.get("email") or "Operador Logístico"
+
+    exitosos = []
+    fallidos = []
+
+    async for session in get_db_session(x_tenant_id):
+        for barcode in deduped_barcodes:
+            if x_tenant_id == "global":
+                find_sql = text("""
+                    SELECT p.id, p.tenant_id, p.guia, p.estado, p.domiciliario_id, p.domiciliario_nombre,
+                           p.zona_id, p.zona_nombre, p.cliente, p.direccion_original,
+                           c.nombre_completo as conductor_personal
+                    FROM pedidos p
+                    LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+                    WHERE (p.guia = :guia OR LOWER(p.guia) = LOWER(:guia))
+                    ORDER BY CASE WHEN p.estado = 'ASIGNADO' THEN 0 ELSE 1 END ASC
+                    LIMIT 1
+                """)
+                res = await session.execute(find_sql, {"guia": barcode})
+            else:
+                find_sql = text("""
+                    SELECT p.id, p.tenant_id, p.guia, p.estado, p.domiciliario_id, p.domiciliario_nombre,
+                           p.zona_id, p.zona_nombre, p.cliente, p.direccion_original,
+                           c.nombre_completo as conductor_personal
+                    FROM pedidos p
+                    LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
+                    WHERE p.tenant_id = :tenant_id 
+                      AND (p.guia = :guia OR LOWER(p.guia) = LOWER(:guia))
+                    ORDER BY CASE WHEN p.estado = 'ASIGNADO' THEN 0 ELSE 1 END ASC
+                    LIMIT 1
+                """)
+                res = await session.execute(find_sql, {"tenant_id": x_tenant_id, "guia": barcode})
+
+            pedido = res.first()
+
+            if not pedido:
+                fallidos.append({"guia": barcode, "motivo": "No encontrada en el sistema"})
+                continue
+
+            if pedido.estado == 'ENTREGADO':
+                driver_name = pedido.conductor_personal or pedido.domiciliario_nombre or "conductor"
+                fallidos.append({"guia": pedido.guia, "motivo": f"Ya entregada por {driver_name}"})
+                continue
+
+            if is_proveedor and pedido.estado == 'DEVUELTO_PROVEEDOR':
+                fallidos.append({"guia": pedido.guia, "motivo": "Ya figura como DEVUELTO AL PROVEEDOR"})
+                continue
+
+            if not is_proveedor and pedido.estado == 'EN_BODEGA' and not pedido.domiciliario_id and not pedido.domiciliario_nombre:
+                fallidos.append({"guia": pedido.guia, "motivo": "Ya se encuentra en BODEGA"})
+                continue
+
+            prev_driver = pedido.conductor_personal or pedido.domiciliario_nombre or "SIN ASIGNAR"
+            target_tenant = pedido.tenant_id or x_tenant_id
+
+            obs_tag = f" [Devuelto al Proveedor de ruta de {prev_driver}]" if is_proveedor else f" [Devuelto a Bodega de ruta de {prev_driver}]"
+            update_sql = text("""
+                UPDATE pedidos
+                SET estado = :target_estado,
+                    domiciliario_id = NULL,
+                    domiciliario_nombre = NULL,
+                    observaciones_entrega = TRIM(COALESCE(observaciones_entrega, '') || :obs_tag),
+                    fecha_actualizacion = CURRENT_TIMESTAMP
+                WHERE id = :id AND tenant_id = :target_tenant
+            """)
+            await session.execute(update_sql, {
+                "id": pedido.id,
+                "target_tenant": target_tenant,
+                "target_estado": target_estado,
+                "obs_tag": obs_tag
+            })
+
+            desc_audit = (
+                f"【Devolución Masiva Proveedor】 Paquete devuelto al proveedor por {user_name} (Retirado de {prev_driver})."
+                if is_proveedor
+                else f"【Retorno Masivo a Bodega】 Paquete devuelto por {prev_driver}. Reingresado a bodega por {user_name}."
+            )
+
+            await registrar_historial_evento(
+                session=session,
+                tenant_id=target_tenant,
+                pedido_id=pedido.id,
+                guia=pedido.guia,
+                tipo_evento=target_evento,
+                descripcion=desc_audit,
+                estado_anterior=pedido.estado,
+                estado_nuevo=target_estado,
+                usuario_id=current_user.get("id") if current_user.get("id") else None,
+                usuario_nombre=user_name,
+                detalles={
+                    "domiciliario_anterior": prev_driver,
+                    "zona": pedido.zona_nombre,
+                    "tipo_destino": "PROVEEDOR" if is_proveedor else "BODEGA",
+                    "motivo": payload.motivo or "LOTE_PEGADO"
+                }
+            )
+
+            exitosos.append({
+                "guia": pedido.guia,
+                "domiciliario_anterior": prev_driver,
+                "zona_nombre": pedido.zona_nombre or "Sin Zona",
+                "nuevo_estado": target_estado
+            })
+
+        await session.commit()
+
+        action_name = "al Proveedor" if is_proveedor else "a Bodega"
+        return {
+            "status": "ok",
+            "total_recibidos": len(deduped_barcodes),
+            "exitosos_count": len(exitosos),
+            "fallidos_count": len(fallidos),
+            "tipo_destino": "PROVEEDOR" if is_proveedor else "BODEGA",
+            "nuevo_estado": target_estado,
+            "exitosos": exitosos,
+            "fallidos": fallidos,
+            "message": f"Se procesaron {len(exitosos)} de {len(deduped_barcodes)} guías {action_name} con éxito."
         }
 
 
 @router.get("/summary")
-async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
+async def get_reconciliation_summary(
+    solo_pendientes: bool = Query(False),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
     """
     Obtiene el resumen operativo de conciliaciones y entregas por domiciliario.
+    Si solo_pendientes=True, filtra únicamente conductores con paquetes en ruta (> 0).
     """
     async for session in get_db_session(x_tenant_id):
         # 1. Resumen por Domiciliario
-        drivers_summary_sql = text("""
+        having_clause = "HAVING COUNT(*) FILTER (WHERE p.estado = 'ASIGNADO') > 0" if solo_pendientes else ""
+        drivers_summary_sql = text(f"""
             SELECT
                 p.domiciliario_id,
                 COALESCE(c.nombre_completo, p.domiciliario_nombre, 'SIN ASIGNAR') as domiciliario,
@@ -380,7 +860,8 @@ async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
             LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
             WHERE p.tenant_id = :tenant_id AND p.domiciliario_id IS NOT NULL
             GROUP BY p.domiciliario_id, c.nombre_completo, p.domiciliario_nombre, c.cedula
-            ORDER BY total_entregados DESC
+            {having_clause}
+            ORDER BY total_en_ruta DESC, total_entregados DESC
         """)
         res_drivers = await session.execute(drivers_summary_sql, {"tenant_id": x_tenant_id})
         driver_rows = [dict(r._mapping) for r in res_drivers.fetchall()]
@@ -390,6 +871,7 @@ async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
             SELECT
                 COUNT(*) FILTER (WHERE estado = 'ENTREGADO') as total_entregados,
                 COUNT(*) FILTER (WHERE estado = 'ASIGNADO') as total_asignados_en_ruta,
+                COUNT(*) FILTER (WHERE estado = 'DEVUELTO_PROVEEDOR') as total_devueltos_proveedor,
                 COUNT(*) FILTER (WHERE estado = 'ENTREGADO' AND pagado_conductor = FALSE) as total_pendientes_pago_nomina
             FROM pedidos
             WHERE tenant_id = :tenant_id
@@ -401,6 +883,7 @@ async def get_reconciliation_summary(x_tenant_id: str = Depends(get_tenant_id)):
             "metricas": {
                 "total_entregados": tot.total_entregados or 0,
                 "total_asignados_en_ruta": tot.total_asignados_en_ruta or 0,
+                "total_devueltos_proveedor": tot.total_devueltos_proveedor or 0,
                 "total_pendientes_pago_nomina": tot.total_pendientes_pago_nomina or 0
             },
             "domiciliarios": driver_rows
@@ -412,12 +895,12 @@ async def list_reconciliation_orders(
     estado: Optional[str] = Query(None),
     domiciliario_id: Optional[uuid.UUID] = Query(None),
     guia: Optional[str] = Query(None),
-    limit: int = Query(5000, le=20000),
+    limit: int = Query(10000, le=25000),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """
     Lista liviana y de alto rendimiento de pedidos en proceso de conciliación/entrega.
-    Excluye geometrías pesadas y metadatos innecesarios para garantizar respuesta sub-20ms.
+    Prioriza pedidos en ruta (ASIGNADO) al tope para control operativo y excluye geometrías pesadas.
     """
     async for session in get_db_session(x_tenant_id):
         sql = """
@@ -435,7 +918,7 @@ async def list_reconciliation_orders(
             FROM pedidos p
             LEFT JOIN personal_conductores c ON p.domiciliario_id = c.id
             WHERE p.tenant_id = :tenant_id
-              AND (p.estado IN ('ENTREGADO', 'ASIGNADO') OR p.domiciliario_id IS NOT NULL)
+              AND (p.estado IN ('ENTREGADO', 'ASIGNADO', 'DEVUELTO_PROVEEDOR') OR p.domiciliario_id IS NOT NULL)
         """
         params = {"tenant_id": x_tenant_id, "limit": limit}
 
@@ -449,7 +932,15 @@ async def list_reconciliation_orders(
             sql += " AND p.domiciliario_id = :domiciliario_id"
             params["domiciliario_id"] = domiciliario_id
 
-        sql += " ORDER BY p.fecha_entrega DESC NULLS LAST, p.fecha_importacion DESC LIMIT :limit"
+        sql += """ ORDER BY 
+            CASE 
+                WHEN p.estado = 'ASIGNADO' THEN 0 
+                WHEN p.estado = 'DEVUELTO_PROVEEDOR' THEN 1
+                ELSE 2 
+            END ASC,
+            p.fecha_entrega DESC NULLS LAST, 
+            p.fecha_importacion DESC 
+            LIMIT :limit"""
 
         res = await session.execute(text(sql), params)
         rows = [dict(r._mapping) for r in res.fetchall()]
@@ -1131,6 +1622,89 @@ async def get_payroll_summary(
             "total_pagado": round(sum(r["monto_neto"] for r in payroll_rows if r["estado_pago"] == "PAGADO"), 2),
             "total_pendiente": round(sum(r["monto_neto"] for r in payroll_rows if r["estado_pago"] == "PENDIENTE"), 2),
             "items": payroll_rows
+        }
+
+
+@router.get("/payroll/driver-orders")
+async def get_driver_payroll_orders(
+    domiciliario_id: uuid.UUID = Query(...),
+    fecha_inicio: str = Query(...),
+    fecha_fin: str = Query(...),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Retorna el detalle exacto de las guías entregadas que componen la liquidación de un domiciliario en el período.
+    Brinda auditoría y desglose transparente (para reclamos, soporte y comprobantes).
+    """
+    dt_inicio = datetime.now().date()
+    dt_fin = datetime.now().date()
+    try:
+        dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+    except Exception:
+        pass
+    try:
+        dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+    async for session in get_db_session(x_tenant_id):
+        # 1. Obtener datos del conductor
+        driver_sql = text("""
+            SELECT id, nombre_completo, cedula, COALESCE(tarifa_paquete, 2000.0) as tarifa_paquete,
+                   banco, cuenta, tipo_cuenta
+            FROM personal_conductores
+            WHERE tenant_id = :tenant_id AND id = :dom_id
+            LIMIT 1
+        """)
+        res_d = await session.execute(driver_sql, {"tenant_id": x_tenant_id, "dom_id": domiciliario_id})
+        d_row = res_d.first()
+        if not d_row:
+            raise HTTPException(status_code=404, detail="Domiciliario no encontrado")
+
+        # 2. Obtener pedidos entregados en el rango de fechas
+        orders_sql = text("""
+            SELECT id, guia, cliente, direccion_original, zona_nombre,
+                   COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) as fecha_efectiva,
+                   estado, pagado_conductor, observaciones_entrega
+            FROM pedidos
+            WHERE tenant_id = :tenant_id
+              AND domiciliario_id = :dom_id
+              AND estado = 'ENTREGADO'
+              AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
+              AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+            ORDER BY fecha_efectiva DESC
+        """)
+        res_orders = await session.execute(orders_sql, {
+            "tenant_id": x_tenant_id,
+            "dom_id": domiciliario_id,
+            "f_inicio": dt_inicio,
+            "f_fin": dt_fin
+        })
+        orders = []
+        for o in res_orders.fetchall():
+            orders.append({
+                "id": str(o.id),
+                "guia": o.guia,
+                "cliente": o.cliente or "Sin Cliente",
+                "direccion": o.direccion_original or "",
+                "zona_nombre": o.zona_nombre or "Sin Zona",
+                "fecha_entrega": o.fecha_efectiva.strftime("%Y-%m-%d %H:%M") if o.fecha_efectiva else None,
+                "estado": o.estado,
+                "pagado_conductor": bool(o.pagado_conductor),
+                "observaciones": o.observaciones_entrega or ""
+            })
+
+        tarifa = float(d_row.tarifa_paquete)
+        return {
+            "domiciliario_id": str(d_row.id),
+            "nombre_completo": d_row.nombre_completo,
+            "cedula": d_row.cedula,
+            "tarifa_paquete": tarifa,
+            "total_guias": len(orders),
+            "monto_total_entregas": round(len(orders) * tarifa, 2),
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+            "orders": orders
         }
 
 

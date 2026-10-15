@@ -9,6 +9,16 @@ from app.core.dependencies import get_current_user, get_tenant_id
 router = APIRouter(prefix="/team", tags=["Gestión de Equipo / Supervisores"])
 
 
+def require_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
+    rol = current_user.get("rol", "")
+    if rol not in ("admin_empresa", "super_admin") and not current_user.get("is_impersonating"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso restringido. Solo administradores pueden gestionar miembros del equipo."
+        )
+    return current_user
+
+
 class TeamMemberCreate(BaseModel):
     nombre_completo: str
     email: str
@@ -55,6 +65,7 @@ async def list_team_members(x_tenant_id: str = Depends(get_tenant_id)):
 @router.post("/", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
 async def create_team_member(
     req: TeamMemberCreate,
+    admin_user: dict = Depends(require_admin_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Registra un nuevo integrante en el equipo de la empresa."""
@@ -95,6 +106,7 @@ async def create_team_member(
 async def update_team_member(
     member_id: uuid.UUID,
     req: TeamMemberCreate,
+    admin_user: dict = Depends(require_admin_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Actualiza la información de un integrante del equipo."""
@@ -133,6 +145,7 @@ async def update_team_member(
 @router.delete("/{member_id}")
 async def delete_team_member(
     member_id: uuid.UUID,
+    admin_user: dict = Depends(require_admin_user),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Elimina o revoca el acceso a un integrante del equipo."""
