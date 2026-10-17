@@ -167,11 +167,31 @@ export function BodegaMap({ height = '600px', onZoneAssigned }) {
       preferCanvas: true
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-      subdomains: 'abcd'
-    }).addTo(map);
+    const cartoKey = import.meta.env.VITE_CARTO_API_KEY;
+
+    if (cartoKey) {
+      // Si el usuario configuró una clave de CARTO en su .env (https://carto.com/basemaps/apikey/)
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`, {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+        subdomains: 'abcd'
+      }).addTo(map);
+    } else {
+      // Capa base oscura 100% libre sin marcas de agua ni API key (Esri World Dark Gray Canvas)
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+        maxNativeZoom: 16,
+        maxZoom: 19
+      }).addTo(map);
+
+      // Capa de nombres de vías y referencias geográficas
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '',
+        maxNativeZoom: 16,
+        maxZoom: 19,
+        opacity: 0.85
+      }).addTo(map);
+    }
 
     markersGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
