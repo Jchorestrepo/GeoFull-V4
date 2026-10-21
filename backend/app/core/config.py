@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     POSTGRES_APP_PASSWORD: str = os.getenv("POSTGRES_APP_PASSWORD", "geofull_app_secure_pass_2026")
 
     # Configuración Google OAuth 2.0 & Dominio
-    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "1047648392019-demo.apps.googleusercontent.com")
+    # Sin valor, el login con Google rechaza todos los tokens (aud no coincide)
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     SUPER_ADMIN_EMAIL: str = os.getenv("SUPER_ADMIN_EMAIL", "jchorestrepo@gmail.com")
     SUPER_ADMIN_EMAILS: str = os.getenv("SUPER_ADMIN_EMAILS", "jchorestrepo@gmail.com,jchorestrepo611@gmail.com,mateoyaleja88@gmail.com,admin@geofull.app")

@@ -32,22 +32,24 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_db_session(tenant_id: Optional[str] = None) -> AsyncGenerator[AsyncSession, None]:
     """
     Proporciona una sesión asíncrona de PostgreSQL/PostGIS.
-    Si se especifica tenant_id, establece la variable RLS `app.current_tenant_id`
-    con limpieza garantizada al retornar la conexión al pool.
+    Siempre fija `app.current_tenant_id` (vacío si no hay tenant) para que la
+    conexión del pool no herede el contexto RLS de una request anterior.
+    Al terminar, limpia la variable y confirma el reset (un reset sin commit
+    se revierte al cerrar la sesión y el valor queda pegado en el pool).
     """
     async with AsyncSessionLocal() as session:
-        if tenant_id:
-            await session.execute(
-                text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
-                {"tenant_id": tenant_id}
-            )
+        await session.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, false)"),
+            {"tenant_id": tenant_id or ""}
+        )
         try:
             yield session
         finally:
-            if tenant_id:
-                try:
-                    await session.execute(text("SELECT set_config('app.current_tenant_id', '', false)"))
-                except Exception:
-                    pass
+            try:
+                await session.rollback()
+                await session.execute(text("SELECT set_config('app.current_tenant_id', '', false)"))
+                await session.commit()
+            except Exception:
+                pass
             await session.close()
 

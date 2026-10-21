@@ -164,11 +164,19 @@ async def google_login(req: GoogleAuthRequest):
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}")
+            resp = await client.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": credential})
             if resp.status_code == 200:
                 data = resp.json()
-                email = data.get("email", "").strip().lower()
-                name = data.get("name") or data.get("given_name") or email
+                # Validar que el token fue emitido para esta app y por Google
+                if data.get("aud") != settings.GOOGLE_CLIENT_ID:
+                    print(f"Token de Google rechazado: aud no coincide con GOOGLE_CLIENT_ID")
+                elif data.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+                    print(f"Token de Google rechazado: iss no válido")
+                elif data.get("email_verified") not in (True, "true"):
+                    print(f"Token de Google rechazado: email no verificado")
+                else:
+                    email = (data.get("email") or "").strip().lower()
+                    name = data.get("name") or data.get("given_name") or email
     except Exception as e:
         print(f"Aviso al verificar token con Google API: {e}")
 
@@ -181,7 +189,7 @@ async def google_login(req: GoogleAuthRequest):
     async for session in get_db_session():
         sql = text("""
             SELECT u.id, u.email, u.nombre_completo, u.rol, u.tenant_id, u.activo,
-                   e.nombre as empresa_nombre
+                   e.nombre as empresa_nombre, e.activo as empresa_activa
             FROM usuarios u
             LEFT JOIN public.empresas e ON u.tenant_id = e.id
             WHERE LOWER(u.email) = :email
@@ -245,13 +253,13 @@ async def google_login(req: GoogleAuthRequest):
             refetch = await session.execute(sql, {"email": email})
             user_row = refetch.first()
         else:
-            # Si el usuario ya existe pero su email de contacto coincide con una empresa registrada, sincronizar su tenant_id
+            # Usuario sin empresa asignada: asociarlo a la empresa cuyo email de contacto coincide
             emp_match = await session.execute(
                 text("SELECT id, nombre FROM public.empresas WHERE LOWER(email_contacto) = :email LIMIT 1"),
                 {"email": email}
             )
             emp = emp_match.first()
-            if emp and user_row.tenant_id != emp.id:
+            if emp and user_row.tenant_id is None:
                 await session.execute(
                     text("UPDATE usuarios SET tenant_id = :t_id WHERE id = :id"),
                     {"t_id": emp.id, "id": user_row.id}
@@ -263,13 +271,20 @@ async def google_login(req: GoogleAuthRequest):
         if user_row.activo is False:
             raise HTTPException(status_code=403, detail="El acceso de esta cuenta de Google se encuentra inactivo.")
 
+        if not is_super_admin:
+            # Usuario normal: debe estar asociado a una empresa activa, nunca al tenant global ni con rol super_admin
+            if user_row.rol == "super_admin" or user_row.tenant_id in (None, "", "global"):
+                raise HTTPException(status_code=403, detail="Acceso denegado. La cuenta no está asociada a una empresa.")
+            if user_row.empresa_activa is not True:
+                raise HTTPException(status_code=403, detail="Acceso denegado. La empresa asociada se encuentra suspendida o inactiva.")
+
         user_dict = {
             "id": str(user_row.id),
             "email": user_row.email,
             "nombre_completo": user_row.nombre_completo or name or user_row.email,
-            "rol": user_row.rol or ("super_admin" if is_super_admin else "admin_empresa"),
-            "tenant_id": user_row.tenant_id or ("global" if is_super_admin else "emp_default_01"),
-            "empresa_nombre": getattr(user_row, "empresa_nombre", None) or ("SaaS Global Super Admin" if is_super_admin else "DeXpress Colombia SAS")
+            "rol": user_row.rol,
+            "tenant_id": user_row.tenant_id,
+            "empresa_nombre": user_row.empresa_nombre
         }
 
         token = create_access_token(data={"sub": user_dict["id"], "user": user_dict})
