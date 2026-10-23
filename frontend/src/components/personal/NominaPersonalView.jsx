@@ -28,7 +28,9 @@ import {
   Filter,
   Eye,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  History,
+  AlertTriangle
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -113,6 +115,7 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
   // Período Persistente / Corte de Nómina
   const [activePeriod, setActivePeriod] = useState(null);
   const [savedPeriods, setSavedPeriods] = useState([]);
+  const [sugeridoNuevoCorte, setSugeridoNuevoCorte] = useState(null);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [periodForm, setPeriodForm] = useState({
     nombre_periodo: '',
@@ -120,6 +123,12 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
     fecha_fin: getTodayStr()
   });
   const [savingPeriod, setSavingPeriod] = useState(false);
+
+  // Modal Historial de Pagos y Dispersiones
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
 
   // Modal para registrar Novedad (Vale/Bono/Penalidad)
   const [showNovedadModal, setShowNovedadModal] = useState(false);
@@ -147,19 +156,79 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
   const [toast, setToast] = useState(null);
 
   // Cargar lista de períodos guardados
-  const fetchPeriods = useCallback(async () => {
+  const fetchPeriods = useCallback(async (preserveCurrentRange = false) => {
     try {
       const res = await axios.get('/api/v1/reconciliation/payroll/periods');
-      setSavedPeriods(res.data.periodos || []);
-      if (res.data.periodo_activo) {
+      const list = res.data.periodos || [];
+      setSavedPeriods(list);
+      if (res.data.sugerido_nuevo_corte) {
+        setSugeridoNuevoCorte(res.data.sugerido_nuevo_corte);
+      }
+      if (!preserveCurrentRange && res.data.periodo_activo) {
         setActivePeriod(res.data.periodo_activo);
         setFechaInicio(res.data.periodo_activo.fecha_inicio);
         setFechaFin(res.data.periodo_activo.fecha_fin);
+      } else if (preserveCurrentRange) {
+        setActivePeriod(prev => {
+          if (!prev) return res.data.periodo_activo || null;
+          const matched = list.find(
+            p => p.fecha_inicio === prev.fecha_inicio && p.fecha_fin === prev.fecha_fin
+          );
+          return matched || prev;
+        });
       }
     } catch (err) {
       console.error("Error cargando períodos de nómina", err);
     }
   }, []);
+
+  // Cargar histórico consolidado de liquidaciones pagadas
+  const fetchPaymentHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await axios.get('/api/v1/reconciliation/payroll/history');
+      setPaymentHistory(res.data);
+    } catch (err) {
+      console.error("Error al cargar historial de pagos", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleOpenHistoryModal = () => {
+    setShowHistoryModal(true);
+    fetchPaymentHistory();
+  };
+
+  // Abrir modal de nuevo corte con fecha sugerida automática (día siguiente al corte más reciente)
+  const handleOpenNewPeriodModal = () => {
+    let ini = fechaInicio;
+    let fin = fechaFin;
+    if (sugeridoNuevoCorte) {
+      ini = sugeridoNuevoCorte.fecha_inicio;
+      fin = sugeridoNuevoCorte.fecha_fin;
+    }
+    const defaultName = formatPeriodName(ini, fin);
+    setPeriodForm({
+      nombre_periodo: defaultName || `Corte ${ini} al ${fin}`,
+      fecha_inicio: ini,
+      fecha_fin: fin
+    });
+    setShowPeriodModal(true);
+  };
+
+  // Detectar solapamiento con cortes ya creados
+  const checkPeriodOverlap = (startStr, endStr) => {
+    if (!startStr || !endStr) return null;
+    for (const p of savedPeriods) {
+      if (p.id === 'sugerido') continue;
+      // Comprobar si se cruzan las fechas: startStr <= p.fecha_fin && endStr >= p.fecha_inicio
+      if (startStr <= p.fecha_fin && endStr >= p.fecha_inicio) {
+        return p;
+      }
+    }
+    return null;
+  };
 
   useEffect(() => {
     fetchPeriods();
@@ -240,7 +309,7 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
         message: `El período "${newP.nombre_periodo}" ha sido fijado como activo.`
       });
 
-      fetchPeriods();
+      fetchPeriods(true);
       fetchPayroll();
     } catch (err) {
       console.error("Error al crear período", err);
@@ -407,7 +476,7 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
       setMetodoPago('TRANSFERENCIA');
       setReferenciaPago('');
       setValesCustomMap({});
-      fetchPeriods();
+      fetchPeriods(true);
       fetchPayroll();
     } catch (err) {
       console.error("Error registrando pago", err);
@@ -547,13 +616,7 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
                 onChange={(e) => {
                   const pId = e.target.value;
                   if (pId === 'NEW') {
-                    const defaultName = formatPeriodName(fechaInicio, fechaFin);
-                    setPeriodForm({
-                      nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
-                      fecha_inicio: fechaInicio,
-                      fecha_fin: fechaFin
-                    });
-                    setShowPeriodModal(true);
+                    handleOpenNewPeriodModal();
                   } else {
                     const selected = savedPeriods.find(p => p.id === pId);
                     if (selected) {
@@ -565,30 +628,37 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
                 }}
                 className="bg-transparent text-white font-bold text-xs w-full outline-none focus:text-purple-300 cursor-pointer truncate"
               >
-                {savedPeriods.map(p => (
+                {/* Mostrar los últimos 8 cortes para no saturar el menú desplegable */}
+                {savedPeriods.slice(0, 8).map(p => (
                   <option key={p.id} value={p.id} className="bg-slate-900 text-white">
                     {p.nombre_periodo} [{p.estado}]
                   </option>
                 ))}
+                {savedPeriods.length > 8 && (
+                  <option disabled className="bg-slate-900 text-slate-500">
+                    ─── ({savedPeriods.length - 8} cortes anteriores en Histórico) ───
+                  </option>
+                )}
                 <option value="NEW" className="bg-slate-900 text-emerald-400 font-bold">➕ Fijar Nuevo Corte...</option>
               </select>
             </div>
           )}
 
           <button
-            onClick={() => {
-              const defaultName = formatPeriodName(fechaInicio, fechaFin);
-              setPeriodForm({
-                nombre_periodo: defaultName || `Corte ${fechaInicio} al ${fechaFin}`,
-                fecha_inicio: fechaInicio,
-                fecha_fin: fechaFin
-              });
-              setShowPeriodModal(true);
-            }}
+            onClick={handleOpenNewPeriodModal}
             className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-md shadow-purple-500/20 whitespace-nowrap"
           >
             <BookmarkPlus className="w-4 h-4" />
             <span>Nuevo Corte</span>
+          </button>
+
+          <button
+            onClick={handleOpenHistoryModal}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 hover:border-amber-400 font-bold text-xs transition-all whitespace-nowrap"
+            title="Ver auditoría y dispersiones de pagos realizados"
+          >
+            <History className="w-4 h-4 text-amber-400" />
+            <span>Histórico Pagos</span>
           </button>
 
           <button
@@ -1130,6 +1200,28 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
                 </div>
               </div>
 
+              {/* Alerta de Solapamiento si se cruza con un corte existente */}
+              {(() => {
+                const overlap = checkPeriodOverlap(periodForm.fecha_inicio, periodForm.fecha_fin);
+                if (!overlap) return null;
+                return (
+                  <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-300 flex items-start gap-2 animate-fadeIn">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-[11px] text-amber-200">
+                        Atención: Solapamiento Detectado
+                      </p>
+                      <p className="text-[10px] text-amber-300/90 leading-relaxed mt-0.5">
+                        Este rango coincide parcialmente con el corte existente: <strong className="text-white">"{overlap.nombre_periodo}"</strong> ({overlap.fecha_inicio} al {overlap.fecha_fin}).
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1 italic">
+                        * Nota: Las guías ya pagadas están blindadas contra doble pago, pero se recomienda evitar cruces de fechas para una contabilidad limpia.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <button
                 type="submit"
                 disabled={savingPeriod}
@@ -1382,6 +1474,144 @@ export function NominaPersonalView({ initialSearchTerm = '' }) {
             setAuditDriver(null);
           }}
         />
+      )}
+
+      {/* MODAL HISTORIAL DE DISPERSIONES Y PAGOS */}
+      {showHistoryModal && (
+        <div className="modal-overlay">
+          <GlassCard className="modal-sheet w-full max-w-4xl p-6 relative rounded-3xl border border-white/20 shadow-2xl bg-slate-900/95 text-white space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Histórico de Dispersiones y Pagos</h3>
+                  <p className="text-[11px] text-slate-400">Auditoría completa de liquidaciones pagadas y comprobantes registrados</p>
+                </div>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-white p-2 touch-target">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Métricas del Histórico */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-white/5">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Total Pagos Registrados</p>
+                <p className="text-xl font-black text-white mt-0.5">{paymentHistory?.total_liquidaciones_pagadas || 0}</p>
+                <p className="text-[10px] text-emerald-400 font-medium mt-0.5">Liquidaciones archivadas</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-white/5">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Monto Total Dispersado</p>
+                <p className="text-xl font-black text-emerald-400 font-mono mt-0.5">
+                  ${Number(paymentHistory?.total_monto_dispersado || 0).toLocaleString('es-CO')}
+                </p>
+                <p className="text-[10px] text-slate-400 font-medium mt-0.5">Pagado a domiciliarios</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/80 border border-white/5">
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Guías Liquidadas</p>
+                <p className="text-xl font-black text-blue-400 font-mono mt-0.5">
+                  {Number(paymentHistory?.total_paquetes_pagados || 0).toLocaleString('es-CO')}
+                </p>
+                <p className="text-[10px] text-blue-300 font-medium mt-0.5">Paquetes entregados</p>
+              </div>
+            </div>
+
+            {/* Buscador de histórico */}
+            <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 shrink-0">
+              <Search className="w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Buscar por conductor, cédula, banco o referencia de pago..."
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                className="bg-transparent text-xs text-white placeholder-slate-500 outline-none w-full"
+              />
+              {historySearch && (
+                <button onClick={() => setHistorySearch('')} className="text-slate-500 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Tabla de registros históricos */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[220px]">
+              {loadingHistory ? (
+                <div className="py-12 text-center text-slate-400 text-xs animate-pulse">
+                  Cargando histórico de pagos...
+                </div>
+              ) : !paymentHistory?.items || paymentHistory.items.length === 0 ? (
+                <div className="py-12 text-center text-slate-500 text-xs">
+                  No se han registrado pagos de nómina aún en este tenant.
+                </div>
+              ) : (
+                paymentHistory.items
+                  .filter(item => {
+                    if (!historySearch.trim()) return true;
+                    const s = historySearch.toLowerCase();
+                    return (
+                      (item.nombre_completo || '').toLowerCase().includes(s) ||
+                      (item.cedula || '').toLowerCase().includes(s) ||
+                      (item.banco || '').toLowerCase().includes(s) ||
+                      (item.referencia_pago || '').toLowerCase().includes(s) ||
+                      (item.metodo_pago || '').toLowerCase().includes(s)
+                    );
+                  })
+                  .map(item => (
+                    <div
+                      key={item.id}
+                      className="p-3 rounded-2xl bg-slate-950/70 border border-white/5 hover:border-amber-500/30 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{item.nombre_completo}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">CC: {item.cedula}</span>
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                            PAGADO
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                          <span>📅 Corte: <strong className="text-slate-300">{item.fecha_inicio} al {item.fecha_fin}</strong></span>
+                          <span>•</span>
+                          <span>📦 {item.total_paquetes} guías</span>
+                          <span>•</span>
+                          <span>💳 {item.metodo_pago || 'TRANSFERENCIA'} {item.referencia_pago ? `(Ref: ${item.referencia_pago})` : ''}</span>
+                        </div>
+
+                        {item.banco && (
+                          <div className="text-[10px] text-slate-400">
+                            🏦 {item.banco} ({item.tipo_cuenta || 'Ahorros'}): <span className="font-mono text-slate-300">{item.cuenta || 'N/A'}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-left sm:text-right shrink-0">
+                        <div className="text-sm font-black text-emerald-400 font-mono">
+                          ${Number(item.monto_neto).toLocaleString('es-CO')}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Fecha pago: <strong className="text-slate-300">{item.fecha_pago || 'N/A'}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all cursor-pointer"
+              >
+                Cerrar Histórico
+              </button>
+            </div>
+          </GlassCard>
+        </div>
       )}
     </div>
   );

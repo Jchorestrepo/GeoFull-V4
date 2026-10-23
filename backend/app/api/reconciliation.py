@@ -1487,15 +1487,15 @@ async def get_payroll_summary(
         for d in drivers:
             d_id = d["id"]
 
-            # Paquetes entregados en el rango de fechas (Control y Conciliación)
+            # Paquetes entregados en el rango de fechas (Control y Conciliación) en hora local de Colombia
             pkgs_sql = text("""
                 SELECT COUNT(id) as total_entregados
                 FROM pedidos
                 WHERE tenant_id = :tenant_id
                   AND domiciliario_id = :dom_id
                   AND estado = 'ENTREGADO'
-                  AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
-                  AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+                  AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) >= :f_inicio
+                  AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) <= :f_fin
                   AND (pagado_conductor IS FALSE OR pagado_conductor IS NULL)
             """)
             res_pkgs = await session.execute(pkgs_sql, {"tenant_id": x_tenant_id, "dom_id": d_id, "f_inicio": dt_inicio, "f_fin": dt_fin})
@@ -1661,7 +1661,7 @@ async def get_driver_payroll_orders(
         if not d_row:
             raise HTTPException(status_code=404, detail="Domiciliario no encontrado")
 
-        # 2. Obtener pedidos entregados en el rango de fechas
+        # 2. Obtener pedidos entregados en el rango de fechas (hora local de Colombia)
         orders_sql = text("""
             SELECT id, guia, cliente, direccion_original, zona_nombre,
                    COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) as fecha_efectiva,
@@ -1670,8 +1670,8 @@ async def get_driver_payroll_orders(
             WHERE tenant_id = :tenant_id
               AND domiciliario_id = :dom_id
               AND estado = 'ENTREGADO'
-              AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
-              AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+              AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) >= :f_inicio
+              AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) <= :f_fin
             ORDER BY fecha_efectiva DESC
         """)
         res_orders = await session.execute(orders_sql, {
@@ -1682,13 +1682,14 @@ async def get_driver_payroll_orders(
         })
         orders = []
         for o in res_orders.fetchall():
+            fe_local = o.fecha_efectiva.astimezone(BOGOTA_TZ) if (o.fecha_efectiva and o.fecha_efectiva.tzinfo) else o.fecha_efectiva
             orders.append({
                 "id": str(o.id),
                 "guia": o.guia,
                 "cliente": o.cliente or "Sin Cliente",
                 "direccion": o.direccion_original or "",
                 "zona_nombre": o.zona_nombre or "Sin Zona",
-                "fecha_entrega": o.fecha_efectiva.strftime("%Y-%m-%d %H:%M") if o.fecha_efectiva else None,
+                "fecha_entrega": fe_local.strftime("%Y-%m-%d %H:%M") if fe_local else None,
                 "estado": o.estado,
                 "pagado_conductor": bool(o.pagado_conductor),
                 "observaciones": o.observaciones_entrega or ""
@@ -1824,7 +1825,7 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Depend
                         "fecha_pago": now_dt
                     })
 
-                # Marcar los pedidos del período como pagados al conductor
+                # Marcar los pedidos del período como pagados al conductor (hora local de Colombia)
                 upd_pkgs = text("""
                     UPDATE pedidos 
                     SET pagado_conductor = TRUE,
@@ -1832,8 +1833,8 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Depend
                     WHERE tenant_id = :tenant_id
                       AND domiciliario_id = :dom_id
                       AND estado = 'ENTREGADO'
-                      AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) >= :f_inicio
-                      AND CAST(COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AS DATE) <= :f_fin
+                      AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) >= :f_inicio
+                      AND CAST((COALESCE(fecha_entrega, fecha_importacion, fecha_actualizacion) AT TIME ZONE 'America/Bogota') AS DATE) <= :f_fin
                 """)
                 await session.execute(upd_pkgs, {"tenant_id": x_tenant_id, "dom_id": dom_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
 
@@ -1911,23 +1912,44 @@ async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Depend
 
                 updated_count += 1
 
-        # Actualizar estado de período si existe un período activo para este rango o registrarlo como PAGADO
+        # Verificar si aún quedan trabajadores pendientes de pago en este corte
+        remaining_pending = sum(
+            1 for r in summary["items"]
+            if r["estado_pago"] != "PAGADO" and r["domiciliario_id"] not in selected_set
+        )
+        nuevo_estado_periodo = "PAGADO" if remaining_pending == 0 else "ABIERTO"
+        fecha_pago_periodo = now_dt if remaining_pending == 0 else None
+
+        # Actualizar estado de período: solo pasa a PAGADO cuando todos los trabajadores del corte están pagados
         upd_per = text("""
             UPDATE periodos_nomina
-            SET estado = 'PAGADO', fecha_pago = :fecha_pago
+            SET estado = :estado, fecha_pago = COALESCE(:fecha_pago, fecha_pago)
             WHERE tenant_id = :tenant_id
               AND fecha_inicio = :f_inicio
               AND fecha_fin = :f_fin
         """)
-        res_upd = await session.execute(upd_per, {"tenant_id": x_tenant_id, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+        res_upd = await session.execute(upd_per, {
+            "tenant_id": x_tenant_id,
+            "f_inicio": dt_inicio,
+            "f_fin": dt_fin,
+            "estado": nuevo_estado_periodo,
+            "fecha_pago": fecha_pago_periodo
+        })
 
         if res_upd.rowcount == 0:
-            nombre_corte = f"Corte Liquidado ({dt_inicio.strftime('%Y-%m-%d')} a {dt_fin.strftime('%Y-%m-%d')})"
+            nombre_corte = f"Corte ({dt_inicio.strftime('%Y-%m-%d')} a {dt_fin.strftime('%Y-%m-%d')})"
             ins_per = text("""
                 INSERT INTO periodos_nomina (tenant_id, nombre_periodo, fecha_inicio, fecha_fin, estado, fecha_pago)
-                VALUES (:tenant_id, :nombre, :f_inicio, :f_fin, 'PAGADO', :fecha_pago)
+                VALUES (:tenant_id, :nombre, :f_inicio, :f_fin, :estado, :fecha_pago)
             """)
-            await session.execute(ins_per, {"tenant_id": x_tenant_id, "nombre": nombre_corte, "f_inicio": dt_inicio, "f_fin": dt_fin, "fecha_pago": now_dt})
+            await session.execute(ins_per, {
+                "tenant_id": x_tenant_id,
+                "nombre": nombre_corte,
+                "f_inicio": dt_inicio,
+                "f_fin": dt_fin,
+                "estado": nuevo_estado_periodo,
+                "fecha_pago": fecha_pago_periodo
+            })
 
         await session.commit()
         return {
@@ -1949,8 +1971,8 @@ class PeriodoNominaCreate(BaseModel):
 @router.get("/payroll/periods")
 async def get_payroll_periods(x_tenant_id: str = Depends(get_tenant_id)):
     """
-    Devuelve la lista de períodos de nómina guardados y el período activo/sugerido.
-    Si no hay un período 'ABIERTO', sugiere automáticamente el rango que inicia al día siguiente del último pago hasta la fecha actual.
+    Devuelve la lista de períodos de nómina guardados, el período activo/sugerido,
+    y el rango sugerido para un nuevo corte (día siguiente al último fin registrado).
     """
     today_dt = datetime.now(BOGOTA_TZ).date()
 
@@ -1979,29 +2001,44 @@ async def get_payroll_periods(x_tenant_id: str = Depends(get_tenant_id)):
             if p["estado"] == "ABIERTO" and not active_period:
                 active_period = p_dict
 
-        # Si no hay período ABIERTO, calcular la fecha siguiente al último pago/corte
-        if not active_period:
-            last_date_sql = text("""
-                SELECT MAX(max_f) as ultima_fecha FROM (
-                    SELECT MAX(fecha_fin) as max_f FROM periodos_nomina WHERE tenant_id = :tenant_id AND estado IN ('PAGADO', 'CERRADO')
-                    UNION ALL
-                    SELECT MAX(fecha_fin) as max_f FROM liquidaciones WHERE tenant_id = :tenant_id AND estado_pago = 'PAGADO'
-                ) sub
-            """)
-            res_last = await session.execute(last_date_sql, {"tenant_id": x_tenant_id})
-            last_date_row = res_last.scalar()
+        # Calcular la fecha siguiente al corte más reciente registrado
+        last_date_sql = text("""
+            SELECT MAX(max_f) as ultima_fecha FROM (
+                SELECT MAX(fecha_fin) as max_f FROM periodos_nomina WHERE tenant_id = :tenant_id
+                UNION ALL
+                SELECT MAX(fecha_fin) as max_f FROM liquidaciones WHERE tenant_id = :tenant_id
+            ) sub
+        """)
+        res_last = await session.execute(last_date_sql, {"tenant_id": x_tenant_id})
+        last_date_row = res_last.scalar()
 
-            if last_date_row:
-                if isinstance(last_date_row, str):
-                    last_date = datetime.strptime(last_date_row, "%Y-%m-%d").date()
-                else:
-                    last_date = last_date_row
-                siguiente_inicio = last_date + timedelta(days=1)
+        if last_date_row:
+            if isinstance(last_date_row, str):
+                last_date = datetime.strptime(last_date_row, "%Y-%m-%d").date()
             else:
-                siguiente_inicio = today_dt.replace(day=1)
+                last_date = last_date_row
+            siguiente_inicio = last_date + timedelta(days=1)
+        else:
+            siguiente_inicio = today_dt.replace(day=1)
 
-            siguiente_fin = max(today_dt, siguiente_inicio)
+        # Sugerir fin quincenal o mensual estándar: si es día 1..15 -> día 15; si es >= 16 -> fin de mes
+        if siguiente_inicio.day <= 15:
+            siguiente_fin = siguiente_inicio.replace(day=15)
+        else:
+            # último día de mes
+            next_month = (siguiente_inicio.replace(day=28) + timedelta(days=4)).replace(day=1)
+            siguiente_fin = next_month - timedelta(days=1)
 
+        if siguiente_fin < siguiente_inicio:
+            siguiente_fin = siguiente_inicio
+
+        sugerido_nuevo_corte = {
+            "fecha_inicio": siguiente_inicio.strftime("%Y-%m-%d"),
+            "fecha_fin": siguiente_fin.strftime("%Y-%m-%d")
+        }
+
+        # Si no hay período ABIERTO, usar período sugerido ACTUAL
+        if not active_period:
             active_period = {
                 "id": "sugerido",
                 "nombre_periodo": f"⚡ ACTUAL ({siguiente_inicio.strftime('%Y-%m-%d')} a {siguiente_fin.strftime('%Y-%m-%d')})",
@@ -2011,12 +2048,98 @@ async def get_payroll_periods(x_tenant_id: str = Depends(get_tenant_id)):
                 "total_neto": 0.0,
                 "fecha_creacion": None
             }
-            # Anteponer el período ACTUAL como la primera opción en la lista
             formatted.insert(0, active_period)
 
         return {
             "periodos": formatted,
-            "periodo_activo": active_period
+            "periodo_activo": active_period,
+            "sugerido_nuevo_corte": sugerido_nuevo_corte
+        }
+
+
+@router.get("/payroll/history")
+async def get_payroll_payment_history(
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    domiciliario_id: Optional[uuid.UUID] = Query(None),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Retorna el histórico completo y consolidado de pagos y dispersiones realizadas (liquidaciones pagadas).
+    Permite auditar fecha de pago, métodos, referencias, montos brutos, deducciones y netos.
+    """
+    async for session in get_db_session(x_tenant_id):
+        params = {"tenant_id": x_tenant_id}
+        conditions = ["l.tenant_id = :tenant_id", "l.estado_pago = 'PAGADO'"]
+
+        if domiciliario_id:
+            conditions.append("l.domiciliario_id = :dom_id")
+            params["dom_id"] = domiciliario_id
+
+        if fecha_inicio:
+            try:
+                dt_i = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+                conditions.append("l.fecha_inicio >= :f_inicio")
+                params["f_inicio"] = dt_i
+            except Exception:
+                pass
+
+        if fecha_fin:
+            try:
+                dt_f = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+                conditions.append("l.fecha_fin <= :f_fin")
+                params["f_fin"] = dt_f
+            except Exception:
+                pass
+
+        where_clause = " AND ".join(conditions)
+        sql = text(f"""
+            SELECT l.id, l.tenant_id, l.domiciliario_id,
+                   COALESCE(c.nombre_completo, 'CONDUCTOR NO REGISTRADO') as nombre_completo,
+                   COALESCE(c.cedula, 'N/A') as cedula,
+                   c.banco, c.cuenta, c.tipo_cuenta,
+                   l.fecha_inicio, l.fecha_fin,
+                   COALESCE(l.total_paquetes_periodo, 0) as total_paquetes,
+                   COALESCE(l.tarifa_paquete, 2000.0) as tarifa_paquete,
+                   COALESCE(l.monto_paquetes, 0.0) as monto_paquetes,
+                   COALESCE(l.salario_fijo_aplicado, 0.0) as salario_fijo_aplicado,
+                   COALESCE(l.bonos, 0.0) as bonos,
+                   COALESCE(l.penalidades, 0.0) as penalidades,
+                   COALESCE(l.vales_descontados, 0.0) as vales_descontados,
+                   COALESCE(l.monto_bruto, 0.0) as monto_bruto,
+                   COALESCE(l.monto_neto, 0.0) as monto_neto,
+                   l.metodo_pago, l.referencia_pago,
+                   l.fecha_pago, l.fecha_creacion
+            FROM liquidaciones l
+            LEFT JOIN personal_conductores c ON c.id = l.domiciliario_id
+            WHERE {where_clause}
+            ORDER BY l.fecha_pago DESC NULLS LAST, l.fecha_fin DESC
+        """)
+        res = await session.execute(sql, params)
+        rows = [dict(r._mapping) for r in res.fetchall()]
+
+        total_neto = sum(float(r["monto_neto"]) for r in rows)
+        total_paquetes = sum(int(r["total_paquetes"]) for r in rows)
+
+        for r in rows:
+            r["id"] = str(r["id"])
+            if r.get("domiciliario_id"):
+                r["domiciliario_id"] = str(r["domiciliario_id"])
+            r["fecha_inicio"] = str(r["fecha_inicio"])
+            r["fecha_fin"] = str(r["fecha_fin"])
+            r["monto_bruto"] = float(r["monto_bruto"])
+            r["monto_neto"] = float(r["monto_neto"])
+            r["vales_descontados"] = float(r["vales_descontados"])
+            r["bonos"] = float(r["bonos"])
+            r["penalidades"] = float(r["penalidades"])
+            r["fecha_pago"] = r["fecha_pago"].astimezone(BOGOTA_TZ).strftime("%Y-%m-%d %H:%M") if (r.get("fecha_pago") and hasattr(r["fecha_pago"], "astimezone")) else (str(r["fecha_pago"]) if r.get("fecha_pago") else None)
+            r["fecha_creacion"] = str(r["fecha_creacion"]) if r.get("fecha_creacion") else None
+
+        return {
+            "total_liquidaciones_pagadas": len(rows),
+            "total_monto_dispersado": round(total_neto, 2),
+            "total_paquetes_pagados": total_paquetes,
+            "items": rows
         }
 
 

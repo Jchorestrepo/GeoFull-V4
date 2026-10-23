@@ -26,13 +26,14 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 
 
 def get_tenant_id(
+    x_tenant_id: Optional[str] = Header(None, alias="x-tenant-id"),
     current_user: dict = Depends(get_current_user)
 ) -> str:
     """
     Determina el tenant_id SEGURO para la petición:
     El tenant_id SIEMPRE se extrae del JWT firmado (inmutable).
-    - Para usuarios normales: es el ID de su empresa.
-    - Para Super Admin: es 'global' (o el ID de la empresa suplantada en Modo Soporte).
+    - Para usuarios normales: es el ID de su empresa (ignora manipulación de headers).
+    - Para Super Admin: es 'global' o el ID de la empresa enviada en header (Modo Soporte / Consola SaaS).
     """
     jwt_tenant = current_user.get("tenant_id")
     if not jwt_tenant:
@@ -40,5 +41,10 @@ def get_tenant_id(
             status_code=403,
             detail="El usuario autenticado no tiene un tenant_id asignado."
         )
+
+    # Permitir al Super Admin seleccionar o suplantar la empresa desde el encabezado x-tenant-id
+    if current_user.get("rol") == "super_admin" and x_tenant_id and x_tenant_id.strip():
+        return x_tenant_id.strip()
+
     return jwt_tenant
 

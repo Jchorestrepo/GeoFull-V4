@@ -132,38 +132,67 @@ async def get_batch_orders_summary(
     guias_a_consultar = guias_limpias[:500]
 
     async for session in get_db_session(tenant_id=tenant_id):
-        query = text("""
-            SELECT 
-                p.id,
-                p.guia,
-                p.cliente,
-                p.telefono_cliente,
-                p.direccion_original,
-                p.direccion_limpia,
-                p.zona_nombre,
-                p.estado,
-                p.domiciliario_nombre,
-                p.proveedor_entrega,
-                p.datos_extra,
-                p.fecha_importacion,
-                p.fecha_actualizacion,
-                COALESCE(h.total_h, 0) as total_eventos
-            FROM pedidos p
-            LEFT JOIN (
-                SELECT guia, COUNT(*) as total_h
-                FROM pedidos_historial
-                WHERE tenant_id = :tenant_id
-                  AND (guia = ANY(:guias) OR UPPER(guia) = ANY(:guias))
-                GROUP BY guia
-            ) h ON (h.guia = p.guia OR UPPER(h.guia) = UPPER(p.guia))
-            WHERE p.tenant_id = :tenant_id
-              AND (p.guia = ANY(:guias) OR UPPER(p.guia) = ANY(:guias))
-        """)
-
-        res = await session.execute(query, {
-            "tenant_id": tenant_id,
-            "guias": guias_a_consultar
-        })
+        if tenant_id == "global":
+            query = text("""
+                SELECT 
+                    p.id,
+                    p.guia,
+                    p.cliente,
+                    p.telefono_cliente,
+                    p.direccion_original,
+                    p.direccion_limpia,
+                    p.zona_nombre,
+                    p.estado,
+                    p.domiciliario_nombre,
+                    p.proveedor_entrega,
+                    p.datos_extra,
+                    p.fecha_importacion,
+                    p.fecha_actualizacion,
+                    COALESCE(h.total_h, 0) as total_eventos
+                FROM pedidos p
+                LEFT JOIN (
+                    SELECT guia, COUNT(*) as total_h
+                    FROM pedidos_historial
+                    WHERE (guia = ANY(:guias) OR UPPER(guia) = ANY(:guias))
+                    GROUP BY guia
+                ) h ON (h.guia = p.guia OR UPPER(h.guia) = UPPER(p.guia))
+                WHERE (p.guia = ANY(:guias) OR UPPER(p.guia) = ANY(:guias))
+            """)
+            res = await session.execute(query, {
+                "guias": guias_a_consultar
+            })
+        else:
+            query = text("""
+                SELECT 
+                    p.id,
+                    p.guia,
+                    p.cliente,
+                    p.telefono_cliente,
+                    p.direccion_original,
+                    p.direccion_limpia,
+                    p.zona_nombre,
+                    p.estado,
+                    p.domiciliario_nombre,
+                    p.proveedor_entrega,
+                    p.datos_extra,
+                    p.fecha_importacion,
+                    p.fecha_actualizacion,
+                    COALESCE(h.total_h, 0) as total_eventos
+                FROM pedidos p
+                LEFT JOIN (
+                    SELECT guia, COUNT(*) as total_h
+                    FROM pedidos_historial
+                    WHERE tenant_id = :tenant_id
+                      AND (guia = ANY(:guias) OR UPPER(guia) = ANY(:guias))
+                    GROUP BY guia
+                ) h ON (h.guia = p.guia OR UPPER(h.guia) = UPPER(p.guia))
+                WHERE p.tenant_id = :tenant_id
+                  AND (p.guia = ANY(:guias) OR UPPER(p.guia) = ANY(:guias))
+            """)
+            res = await session.execute(query, {
+                "tenant_id": tenant_id,
+                "guias": guias_a_consultar
+            })
         rows = res.fetchall()
 
         # Mapear para devolver en el mismo orden en que fueron consultadas
@@ -227,48 +256,88 @@ async def get_order_tracking_history(
 
     async for session in get_db_session(tenant_id=tenant_id):
         # 1. Obtener pedido con todos los campos asociados
-        p_query = text("""
-            SELECT 
-                id, tenant_id, guia, cliente, telefono_cliente, direccion_original,
-                direccion_limpia, complemento, observaciones_entrega, latitud, longitud,
-                nivel_precision, precision_metros, confianza_score, zona_id, zona_nombre,
-                estado, domiciliario_id, domiciliario_nombre, fecha_entrega, pagado_conductor,
-                proveedor_entrega, alerta_rango_logico, detalle_alerta_rango,
-                estado_normalizacion, clave_direccion, confianza_normalizacion,
-                advertencias_normalizacion, datos_extra, fecha_importacion,
-                fecha_actualizacion, fecha_pago_conductor
-            FROM pedidos
-            WHERE tenant_id = :tenant_id 
-              AND (guia = :guia OR UPPER(guia) = :guia_upper OR LOWER(guia) = :guia_lower)
-            LIMIT 1
-        """)
-        p_res = await session.execute(p_query, {
-            "tenant_id": tenant_id,
-            "guia": guia_raw,
-            "guia_upper": guia_clean,
-            "guia_lower": guia_raw.lower()
-        })
-        p = p_res.first()
+        if tenant_id == "global":
+            p_query = text("""
+                SELECT 
+                    id, tenant_id, guia, cliente, telefono_cliente, direccion_original,
+                    direccion_limpia, complemento, observaciones_entrega, latitud, longitud,
+                    nivel_precision, precision_metros, confianza_score, zona_id, zona_nombre,
+                    estado, domiciliario_id, domiciliario_nombre, fecha_entrega, pagado_conductor,
+                    proveedor_entrega, alerta_rango_logico, detalle_alerta_rango,
+                    estado_normalizacion, clave_direccion, confianza_normalizacion,
+                    advertencias_normalizacion, datos_extra, fecha_importacion,
+                    fecha_actualizacion, fecha_pago_conductor
+                FROM pedidos
+                WHERE (guia = :guia OR UPPER(guia) = :guia_upper OR LOWER(guia) = :guia_lower)
+                LIMIT 1
+            """)
+            p_res = await session.execute(p_query, {
+                "guia": guia_raw,
+                "guia_upper": guia_clean,
+                "guia_lower": guia_raw.lower()
+            })
+            p = p_res.first()
 
-        if not p:
-            raise HTTPException(status_code=404, detail=f"La guía '{guia_raw}' no existe en el sistema.")
+            if not p:
+                raise HTTPException(status_code=404, detail=f"La guía '{guia_raw}' no existe en el sistema.")
 
-        # 2. Consultar historial registrado
-        h_query = text("""
-            SELECT 
-                id, tipo_evento, descripcion, estado_anterior, estado_nuevo,
-                usuario_nombre, detalles, created_at
-            FROM pedidos_historial
-            WHERE tenant_id = :tenant_id 
-              AND (guia = :guia OR UPPER(guia) = :guia_upper)
-            ORDER BY created_at ASC
-        """)
-        h_res = await session.execute(h_query, {
-            "tenant_id": tenant_id,
-            "guia": p.guia,
-            "guia_upper": p.guia.upper()
-        })
-        h_rows = h_res.fetchall()
+            # 2. Consultar historial registrado
+            h_query = text("""
+                SELECT 
+                    id, tipo_evento, descripcion, estado_anterior, estado_nuevo,
+                    usuario_nombre, detalles, created_at
+                FROM pedidos_historial
+                WHERE (guia = :guia OR UPPER(guia) = :guia_upper)
+                ORDER BY created_at ASC
+            """)
+            h_res = await session.execute(h_query, {
+                "guia": p.guia,
+                "guia_upper": p.guia.upper()
+            })
+            h_rows = h_res.fetchall()
+        else:
+            p_query = text("""
+                SELECT 
+                    id, tenant_id, guia, cliente, telefono_cliente, direccion_original,
+                    direccion_limpia, complemento, observaciones_entrega, latitud, longitud,
+                    nivel_precision, precision_metros, confianza_score, zona_id, zona_nombre,
+                    estado, domiciliario_id, domiciliario_nombre, fecha_entrega, pagado_conductor,
+                    proveedor_entrega, alerta_rango_logico, detalle_alerta_rango,
+                    estado_normalizacion, clave_direccion, confianza_normalizacion,
+                    advertencias_normalizacion, datos_extra, fecha_importacion,
+                    fecha_actualizacion, fecha_pago_conductor
+                FROM pedidos
+                WHERE tenant_id = :tenant_id 
+                  AND (guia = :guia OR UPPER(guia) = :guia_upper OR LOWER(guia) = :guia_lower)
+                LIMIT 1
+            """)
+            p_res = await session.execute(p_query, {
+                "tenant_id": tenant_id,
+                "guia": guia_raw,
+                "guia_upper": guia_clean,
+                "guia_lower": guia_raw.lower()
+            })
+            p = p_res.first()
+
+            if not p:
+                raise HTTPException(status_code=404, detail=f"La guía '{guia_raw}' no existe en el sistema.")
+
+            # 2. Consultar historial registrado
+            h_query = text("""
+                SELECT 
+                    id, tipo_evento, descripcion, estado_anterior, estado_nuevo,
+                    usuario_nombre, detalles, created_at
+                FROM pedidos_historial
+                WHERE tenant_id = :tenant_id 
+                  AND (guia = :guia OR UPPER(guia) = :guia_upper)
+                ORDER BY created_at ASC
+            """)
+            h_res = await session.execute(h_query, {
+                "tenant_id": tenant_id,
+                "guia": p.guia,
+                "guia_upper": p.guia.upper()
+            })
+            h_rows = h_res.fetchall()
 
         eventos: List[TrackingEventResponse] = []
         has_importacion = False

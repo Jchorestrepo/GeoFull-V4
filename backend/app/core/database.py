@@ -9,7 +9,8 @@ engine = create_async_engine(
     echo=False,
     future=True,
     pool_size=20,
-    max_overflow=10
+    max_overflow=10,
+    connect_args={"server_settings": {"timezone": "America/Bogota"}}
 )
 
 # Engine administrativo para migraciones DDL (usuario postgres superuser)
@@ -18,7 +19,8 @@ admin_engine = create_async_engine(
     echo=False,
     future=True,
     pool_size=5,
-    max_overflow=5
+    max_overflow=5,
+    connect_args={"server_settings": {"timezone": "America/Bogota"}}
 )
 
 AsyncSessionLocal = async_sessionmaker(
