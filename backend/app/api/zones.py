@@ -366,9 +366,6 @@ async def get_inventory_summary(x_tenant_id: str = Depends(get_tenant_id)):
         ]
 
 
-ESTADOS_FINALES = ('ENTREGADO', 'PERDIDO', 'DEVUELTO', 'DEVUELTO_PROVEEDOR', 'DEVOLUCION', 'ANULADO')
-
-
 @router.get("/unscanned-orders")
 async def get_unscanned_orders(
     fecha_desde: Optional[date] = None,
@@ -378,7 +375,7 @@ async def get_unscanned_orders(
     offset: int = Query(0, ge=0),
     x_tenant_id: str = Depends(get_tenant_id)
 ):
-    """Lista pedidos no escaneados en bodega (estado distinto de EN_BODEGA y no final) por fecha de importación."""
+    """Lista pedidos sin evento SECTORIZACION_ESCANEO en pedidos_historial, por fecha de importación."""
     hasta = fecha_hasta or date.today()
     desde = fecha_desde or hasta - timedelta(days=15)
     params = {
@@ -387,14 +384,17 @@ async def get_unscanned_orders(
         "hasta_excl": hasta + timedelta(days=1),
         "limit": limit,
         "offset": offset,
-        "estados_finales": list(ESTADOS_FINALES),
     }
     filtro = """
         WHERE tenant_id = :tenant_id
-          AND estado IS DISTINCT FROM 'EN_BODEGA'
-          AND (estado IS NULL OR estado <> ALL(:estados_finales))
           AND fecha_importacion >= :desde
           AND fecha_importacion < :hasta_excl
+          AND NOT EXISTS (
+            SELECT 1 FROM pedidos_historial h
+            WHERE h.tenant_id = pedidos.tenant_id
+              AND h.pedido_id = pedidos.id
+              AND h.tipo_evento = 'SECTORIZACION_ESCANEO'
+          )
     """
     if guia and guia.strip():
         filtro += " AND guia ILIKE :guia"
