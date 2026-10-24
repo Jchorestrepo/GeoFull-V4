@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import { Search, Download, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, Download, ChevronLeft, ChevronRight, Loader2, Copy, Check } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
 import { Badge } from '../ui/Badge';
 
@@ -35,6 +36,7 @@ export function UnscannedOrdersView() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
+  const [copiada, setCopiada] = useState(null);
 
   const tenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
   const headers = { 'X-Tenant-ID': tenantId };
@@ -74,6 +76,16 @@ export function UnscannedOrdersView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fechaDesde, fechaHasta, guia, page, tenantId]);
+
+  const copiarGuia = async (guiaCopiar) => {
+    try {
+      await navigator.clipboard.writeText(guiaCopiar);
+      setCopiada(guiaCopiar);
+      setTimeout(() => setCopiada((actual) => (actual === guiaCopiar ? null : actual)), 1500);
+    } catch (err) {
+      setError('No se pudo copiar al portapapeles.');
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -189,7 +201,26 @@ export function UnscannedOrdersView() {
             <tbody className="divide-y divide-white/5">
               {data.items.map((o) => (
                 <tr key={o.guia} className="hover:bg-slate-800/40">
-                  <td className="px-4 py-2.5 font-mono font-bold text-blue-300 break-all">{o.guia}</td>
+                  <td className="px-4 py-2.5 font-mono font-bold">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/historial?q=${encodeURIComponent(o.guia)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-300 hover:underline break-all"
+                      >
+                        {o.guia}
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => copiarGuia(o.guia)}
+                        title="Copiar número de pedido"
+                        className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-slate-800/60 transition-colors shrink-0"
+                      >
+                        {copiada === o.guia ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-slate-400 whitespace-nowrap">{formatFecha(o.fecha_importacion)}</td>
                   <td className="px-4 py-2.5 text-slate-200">{o.cliente}</td>
                   <td className="px-4 py-2.5 text-slate-300 max-w-xs truncate">{o.direccion}</td>
