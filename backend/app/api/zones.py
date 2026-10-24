@@ -1,7 +1,8 @@
 from typing import List, Optional, Any, Dict
+from datetime import date, timedelta
 import uuid
 import json
-from fastapi import APIRouter, HTTPException, Header, status, Depends
+from fastapi import APIRouter, HTTPException, Header, status, Depends, Query
 from pydantic import BaseModel
 from app.core.dependencies import get_current_user, get_tenant_id
 from app.core.audit import registrar_historial_evento
@@ -363,6 +364,71 @@ async def get_inventory_summary(x_tenant_id: str = Depends(get_tenant_id)):
             }
             for idx, r in enumerate(rows)
         ]
+
+
+@router.get("/unscanned-orders")
+async def get_unscanned_orders(
+    fecha_desde: Optional[date] = None,
+    fecha_hasta: Optional[date] = None,
+    guia: Optional[str] = None,
+    limit: int = Query(500, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """Lista pedidos sin evento SECTORIZACION_ESCANEO en pedidos_historial, por fecha de importación."""
+    hasta = fecha_hasta or date.today()
+    desde = fecha_desde or hasta - timedelta(days=15)
+    params = {
+        "tenant_id": x_tenant_id,
+        "desde": desde,
+        "hasta_excl": hasta + timedelta(days=1),
+        "limit": limit,
+        "offset": offset,
+    }
+    filtro = """
+        WHERE tenant_id = :tenant_id
+          AND fecha_importacion >= :desde
+          AND fecha_importacion < :hasta_excl
+          AND NOT EXISTS (
+            SELECT 1 FROM pedidos_historial h
+            WHERE h.tenant_id = pedidos.tenant_id
+              AND h.pedido_id = pedidos.id
+              AND h.tipo_evento = 'SECTORIZACION_ESCANEO'
+          )
+    """
+    if guia and guia.strip():
+        filtro += " AND guia ILIKE :guia"
+        params["guia"] = f"%{guia.strip()}%"
+
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        total_res = await session.execute(text(f"SELECT COUNT(*) FROM pedidos {filtro}"), params)
+        total = total_res.scalar() or 0
+
+        res = await session.execute(text(f"""
+            SELECT guia, cliente, direccion_original, direccion_limpia,
+                   zona_nombre, estado, fecha_importacion
+            FROM pedidos
+            {filtro}
+            ORDER BY fecha_importacion DESC
+            LIMIT :limit OFFSET :offset
+        """), params)
+        items = [
+            {
+                "guia": r.guia,
+                "cliente": r.cliente,
+                "direccion": r.direccion_limpia or r.direccion_original,
+                "zona_nombre": r.zona_nombre,
+                "estado": r.estado,
+                "fecha_importacion": r.fecha_importacion.isoformat() if r.fecha_importacion else None,
+            }
+            for r in res.fetchall()
+        ]
+        return {
+            "items": items,
+            "total": total,
+            "fecha_desde": desde.isoformat(),
+            "fecha_hasta": hasta.isoformat(),
+        }
 
 
 @router.post("/reset-inventory/{zone_id}")

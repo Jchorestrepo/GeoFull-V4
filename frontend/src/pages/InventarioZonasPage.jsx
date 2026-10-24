@@ -11,12 +11,14 @@ import {
   MapPin, 
   ArrowRightLeft,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  PackageX
 } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { dataCache } from '../lib/dataCache';
+import { UnscannedOrdersView } from '../components/inventario/UnscannedOrdersView';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
@@ -29,6 +31,7 @@ export function InventarioZonasPage() {
   const [lastScannedPackage, setLastScannedPackage] = useState(null);
   const [recentScans, setRecentScans] = useState([]);
   const [toast, setToast] = useState(null);
+  const [activeTab, setActiveTab] = useState('inventario');
 
   // Referencia para el timer de doble escaneo de zona (< 3s)
   const lastZoneScanRef = useRef({ zoneId: null, timestamp: 0 });
@@ -304,6 +307,36 @@ export function InventarioZonasPage() {
         </div>
       </div>
 
+      {/* Navegación de vistas */}
+      <div className="flex border-b border-white/10 gap-2 overflow-x-auto">
+        {[
+          { id: 'inventario', label: 'Inventario', icon: ScanBarcode },
+          { id: 'sin_escanear', label: 'Sin escanear', icon: PackageX }
+        ].map(t => {
+          const Icon = t.icon;
+          const isSelected = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              type="button"
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all whitespace-nowrap shrink-0 touch-target ${
+                isSelected
+                  ? 'border-blue-500 text-blue-400 bg-blue-500/10 rounded-t-xl'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'sin_escanear' ? (
+        <UnscannedOrdersView />
+      ) : (
+        <>
       {/* Barcode Scanner Main Input Box */}
       <GlassCard className="p-4 md:p-5 border-blue-500/30 bg-blue-500/5 space-y-3">
         <form onSubmit={handleScanSubmit} className="flex flex-col sm:flex-row items-center gap-3">
@@ -547,6 +580,8 @@ export function InventarioZonasPage() {
             </table>
           </div>
         </GlassCard>
+      )}
+        </>
       )}
     </div>
   );
