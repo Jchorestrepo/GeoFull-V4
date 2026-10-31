@@ -776,6 +776,15 @@ export function HistorialPage() {
                                         {ev.tipo_evento === 'REUBICACION_BODEGA' && (
                                           <Layers className="w-3.5 h-3.5 text-amber-400" />
                                         )}
+                                        {ev.tipo_evento === 'CODIGO_NO_IMPORTADO_BODEGA' && (
+                                          <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                        )}
+                                        {ev.tipo_evento === 'VERIFICACION_PAQUETE_EXTRA' && (
+                                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                        )}
+                                        {ev.tipo_evento === 'RETIRO_BODEGA_MANUAL' && (
+                                          <RotateCcw className="w-3.5 h-3.5 text-red-400" />
+                                        )}
                                         {ev.tipo_evento === 'SECTORIZACION_ESCANEO' && (
                                           <MapPin className="w-3.5 h-3.5 text-blue-400" />
                                         )}

@@ -293,6 +293,32 @@ async def process_batch_orders(
     user_name = current_user.get("nombre") or current_user.get("email") or "Operador Importación"
 
     async for session in get_db_session(tenant_id=x_tenant_id):
+        # Al iniciar una nueva importación masiva, reiniciar los contadores de inventario en bodega a cero
+        # y limpiar códigos no importados sin verificar del turno anterior.
+        await session.execute(text("""
+            DELETE FROM pedidos_historial
+            WHERE tenant_id = :tenant_id
+              AND pedido_id IN (
+                  SELECT id FROM pedidos
+                  WHERE tenant_id = :tenant_id
+                    AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
+                    AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+              )
+        """), {"tenant_id": x_tenant_id})
+        await session.execute(text("""
+            DELETE FROM pedidos
+            WHERE tenant_id = :tenant_id
+              AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
+              AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+        """), {"tenant_id": x_tenant_id})
+        await session.execute(text("""
+            UPDATE pedidos
+            SET estado = 'PENDIENTE_REINVENTARIO',
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE tenant_id = :tenant_id
+              AND estado = 'EN_BODEGA'
+        """), {"tenant_id": x_tenant_id})
+
         for item in req.items:
             try:
                 resultado = normalizar(item.direccion_original, _cfg_normalizador)
@@ -316,7 +342,11 @@ async def process_batch_orders(
                     exitosos += 1
 
                 geom_sql = "ST_SetSRID(ST_Point(:lon, :lat), 4326)" if geocoded.longitud and geocoded.latitud else "NULL"
-                datos_extra_json = json.dumps(item.datos_extra) if item.datos_extra else "{}"
+                extra_dict = dict(item.datos_extra) if item.datos_extra else {}
+                extra_dict["zona_importacion_id"] = str(sectorized.zona_id) if sectorized.zona_id else None
+                extra_dict["zona_importacion_nombre"] = sectorized.zona_nombre
+                extra_dict["origen_inventario"] = "IMPORTACION"
+                datos_extra_json = json.dumps(extra_dict, ensure_ascii=False)
 
                 upsert_sql = text(f"""
                     INSERT INTO pedidos (
