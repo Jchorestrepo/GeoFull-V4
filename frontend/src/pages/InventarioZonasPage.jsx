@@ -58,6 +58,8 @@ export function InventarioZonasPage() {
   // Referencia para el timer de doble escaneo de zona (< 3s)
   const lastZoneScanRef = useRef({ zoneId: null, timestamp: 0 });
   const inputRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const dirtyCacheRef = useRef(false);
 
   const tenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
   const token = localStorage.getItem('token');
@@ -66,23 +68,38 @@ export function InventarioZonasPage() {
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 
+  useEffect(() => {
+    return () => {
+      if (dirtyCacheRef.current) {
+        dataCache.invalidateOrders();
+      }
+      if (audioCtxRef.current) {
+        try { audioCtxRef.current.close(); } catch (e) {}
+      }
+    };
+  }, []);
+
   // Audio Synth Engine (Web Audio API + SpeechSynthesis)
   const playSound = (type) => {
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const audioCtx = audioCtxRef.current;
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain);
       gain.connect(audioCtx.destination);
 
       const now = audioCtx.currentTime;
-      let duration = 0.3;
 
       if (type === 'success') {
         osc.frequency.setValueAtTime(880, now);
         gain.gain.setValueAtTime(0.15, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
-        duration = 0.15;
         osc.start(now);
         osc.stop(now + 0.12);
       } else if (type === 'zone_changed') {
@@ -90,7 +107,6 @@ export function InventarioZonasPage() {
         osc.frequency.setValueAtTime(880, now + 0.1);
         gain.gain.setValueAtTime(0.2, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-        duration = 0.3;
         osc.start(now);
         osc.stop(now + 0.25);
       } else if (type === 'unimported_alert') {
@@ -100,7 +116,6 @@ export function InventarioZonasPage() {
         osc.frequency.setValueAtTime(180, now + 0.18);
         gain.gain.setValueAtTime(0.28, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-        duration = 0.45;
         osc.start(now);
         osc.stop(now + 0.4);
       } else if (type === 'reset') {
@@ -108,21 +123,15 @@ export function InventarioZonasPage() {
         osc.frequency.exponentialRampToValueAtTime(200, now + 0.25);
         gain.gain.setValueAtTime(0.25, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-        duration = 0.3;
         osc.start(now);
         osc.stop(now + 0.25);
       } else if (type === 'error') {
         osc.frequency.setValueAtTime(220, now);
         gain.gain.setValueAtTime(0.2, now);
         gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-        duration = 0.35;
         osc.start(now);
         osc.stop(now + 0.3);
       }
-
-      setTimeout(() => {
-        try { audioCtx.close(); } catch (e) {}
-      }, Math.ceil(duration * 1000) + 50);
     } catch (err) {
       console.warn('Audio Context error:', err);
     }
@@ -212,9 +221,11 @@ export function InventarioZonasPage() {
         { headers: authHeaders }
       );
       showToast(res.data.message || `Código ${pkg.guia} retirado de la zona`, 'success');
-      await openZonePackagesModal(inspectZone, modalTab);
-      await fetchSummary();
-      dataCache.invalidateOrders();
+      dirtyCacheRef.current = true;
+      await Promise.all([
+        openZonePackagesModal(inspectZone, modalTab),
+        fetchSummary()
+      ]);
     } catch (err) {
       showToast(err.response?.data?.detail || 'Error al eliminar código de la zona', 'error');
     }
@@ -229,9 +240,11 @@ export function InventarioZonasPage() {
         { headers: authHeaders }
       );
       showToast(res.data.message || `Código ${pkg.guia} verificado como paquete extra`, 'success');
-      await openZonePackagesModal(inspectZone, 'bodega');
-      await fetchSummary();
-      dataCache.invalidateOrders();
+      dirtyCacheRef.current = true;
+      await Promise.all([
+        openZonePackagesModal(inspectZone, 'bodega'),
+        fetchSummary()
+      ]);
     } catch (err) {
       showToast(err.response?.data?.detail || 'Error al verificar código extra', 'error');
     }
@@ -382,7 +395,7 @@ export function InventarioZonasPage() {
           });
         }
 
-        dataCache.invalidateOrders();
+        dirtyCacheRef.current = true;
       }
     } catch (err) {
       console.error('Error al procesar escaneo:', err);
@@ -413,6 +426,7 @@ export function InventarioZonasPage() {
       showToast(`Zona "${zoneToReset.nombre}" reiniciada a 0 paquetes`, 'success');
 
       await fetchSummary();
+      dirtyCacheRef.current = false;
       dataCache.invalidateOrders();
     } catch (err) {
       console.error('Error al reiniciar zona:', err);
@@ -429,6 +443,7 @@ export function InventarioZonasPage() {
       playSound('reset');
       showToast(res.data.message || 'Todas las zonas han sido reiniciadas a 0', 'success');
       await fetchSummary();
+      dirtyCacheRef.current = false;
       dataCache.invalidateOrders();
     } catch (err) {
       showToast('Error al reiniciar todas las zonas', 'error');
@@ -441,6 +456,7 @@ export function InventarioZonasPage() {
       const res = await axios.post(`${API_BASE}/zones/reorganize-map`, {}, { headers: authHeaders });
       playSound('success');
       showToast(res.data.message || 'Mapa reorganizado y actualizado con las zonas de bodega', 'success');
+      dirtyCacheRef.current = false;
       dataCache.invalidateOrders();
       dataCache.invalidateZones();
       await fetchSummary();

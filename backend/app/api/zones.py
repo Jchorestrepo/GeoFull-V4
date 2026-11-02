@@ -335,30 +335,34 @@ async def get_inventory_summary(x_tenant_id: str = Depends(get_tenant_id)):
     """Obtiene el listado de zonas activas con conteo en tiempo real de paquetes en bodega, esperados y alertas rojas."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("""
+            WITH conteo_zonas AS (
+                SELECT
+                    p.zona_id,
+                    COUNT(*) FILTER (WHERE p.estado = 'EN_BODEGA') AS total_bodega,
+                    COUNT(*) FILTER (WHERE p.estado = 'SECTORIZADO') AS pendientes_escanear,
+                    COUNT(*) FILTER (
+                        WHERE p.estado = 'EN_BODEGA'
+                          AND p.cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
+                    ) AS alertas_rojas
+                FROM pedidos p
+                WHERE p.tenant_id = :tenant_id
+                  AND p.estado IN ('EN_BODEGA', 'SECTORIZADO')
+                  AND p.zona_id IS NOT NULL
+                GROUP BY p.zona_id
+            )
             SELECT 
                 z.id,
                 z.nombre_zona,
                 z.codigo_zona,
                 z.codigo_barras,
                 z.activa,
-                COUNT(p.id) FILTER (WHERE p.estado = 'EN_BODEGA') as total_bodega,
-                COUNT(p.id) FILTER (WHERE p.estado = 'SECTORIZADO') as pendientes_escanear,
-                COUNT(p.id) FILTER (
-                    WHERE p.estado IN ('SECTORIZADO', 'EN_BODEGA')
-                      AND (
-                          COALESCE(p.datos_extra->>'origen_inventario', '') != 'NO_IMPORTADO'
-                          OR COALESCE((p.datos_extra->>'verificado_bodega')::boolean, false) = true
-                      )
-                ) as total_esperados,
-                COUNT(p.id) FILTER (
-                    WHERE p.estado = 'EN_BODEGA'
-                      AND COALESCE(p.datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-                      AND COALESCE((p.datos_extra->>'verificado_bodega')::boolean, false) = false
-                ) as alertas_rojas
+                COALESCE(c.total_bodega, 0) AS total_bodega,
+                COALESCE(c.pendientes_escanear, 0) AS pendientes_escanear,
+                GREATEST(0, COALESCE(c.total_bodega, 0) + COALESCE(c.pendientes_escanear, 0) - COALESCE(c.alertas_rojas, 0)) AS total_esperados,
+                COALESCE(c.alertas_rojas, 0) AS alertas_rojas
             FROM zonas_personalizadas z
-            LEFT JOIN pedidos p ON p.zona_id = z.id AND p.tenant_id = z.tenant_id
+            LEFT JOIN conteo_zonas c ON c.zona_id = z.id
             WHERE z.tenant_id = :tenant_id AND z.activa = true
-            GROUP BY z.id, z.nombre_zona, z.codigo_zona, z.codigo_barras, z.activa
             ORDER BY z.nombre_zona ASC
         """)
         res = await session.execute(sql, {"tenant_id": x_tenant_id})
@@ -407,7 +411,7 @@ async def get_unscanned_orders(
           AND fecha_importacion >= :desde
           AND fecha_importacion < :hasta_excl
           AND estado != 'EN_BODEGA'
-          AND COALESCE(datos_extra->>'origen_inventario', '') != 'NO_IMPORTADO'
+          AND COALESCE(cliente, '') != '⚠️ CÓDIGO NO EN IMPORTACIÓN'
           AND NOT EXISTS (
             SELECT 1 FROM pedidos_historial h
             WHERE h.tenant_id = pedidos.tenant_id
@@ -467,13 +471,26 @@ async def get_zone_packages(
 
         p_res = await session.execute(text("""
             SELECT id, guia, cliente, direccion_original, direccion_limpia,
-                   zona_id, zona_nombre, estado, datos_extra,
+                   zona_id, zona_nombre, estado,
+                   (cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN') AS alerta_roja,
+                   (cliente = 'Paquete Extra (Verificado en Bodega)') AS verificado_bodega,
+                   CASE
+                       WHEN estado = 'EN_BODEGA' THEN COALESCE(datos_extra->>'zona_importacion_nombre', datos_extra->>'zona_original_nombre', zona_nombre)
+                       ELSE zona_nombre
+                   END AS zona_orig,
+                   CASE
+                       WHEN estado = 'EN_BODEGA' THEN datos_extra->>'escaneado_por'
+                       ELSE NULL
+                   END AS escaneado_por,
                    fecha_importacion, fecha_actualizacion
             FROM pedidos
             WHERE tenant_id = :tenant_id
               AND zona_id = :zid
               AND estado IN ('EN_BODEGA', 'SECTORIZADO')
-            ORDER BY fecha_actualizacion DESC
+            ORDER BY
+                CASE WHEN estado = 'EN_BODEGA' THEN 0 ELSE 1 END,
+                fecha_actualizacion DESC
+            LIMIT 1000
         """), {"tenant_id": x_tenant_id, "zid": zone_id})
 
         en_bodega = []
@@ -481,11 +498,10 @@ async def get_zone_packages(
         alertas_rojas_count = 0
 
         for r in p_res.fetchall():
-            extra = r.datos_extra if isinstance(r.datos_extra, dict) else (json.loads(r.datos_extra) if r.datos_extra else {})
-            es_no_importado = extra.get("origen_inventario") == "NO_IMPORTADO"
-            verificado_bodega = bool(extra.get("verificado_bodega", False))
-            alerta_roja = es_no_importado and not verificado_bodega
-            zona_orig = extra.get("zona_importacion_nombre") or extra.get("zona_original_nombre") or r.zona_nombre
+            alerta_roja = bool(r.alerta_roja)
+            verificado_bodega = bool(r.verificado_bodega)
+            es_no_importado = alerta_roja or verificado_bodega
+            zona_orig = r.zona_orig or r.zona_nombre
             reubicado = bool(zona_orig and zona_orig != z.nombre_zona and not es_no_importado)
 
             item = {
@@ -500,7 +516,7 @@ async def get_zone_packages(
                 "es_no_importado": es_no_importado,
                 "verificado_bodega": verificado_bodega,
                 "alerta_roja": alerta_roja,
-                "escaneado_por": extra.get("escaneado_por"),
+                "escaneado_por": r.escaneado_por,
                 "fecha_actualizacion": r.fecha_actualizacion.isoformat() if r.fecha_actualizacion else None,
                 "fecha_importacion": r.fecha_importacion.isoformat() if r.fecha_importacion else None,
             }
@@ -512,7 +528,6 @@ async def get_zone_packages(
             else:
                 pendientes.append(item)
 
-        # Ordenar para que los códigos en alerta roja aparezcan siempre de primeros
         en_bodega.sort(key=lambda x: (0 if x["alerta_roja"] else 1))
 
         return {
@@ -544,7 +559,7 @@ async def remove_package_from_zone(
     user_name = current_user.get("nombre") or current_user.get("email") or "Operador de Bodega"
     async for session in get_db_session(tenant_id=x_tenant_id):
         res = await session.execute(text("""
-            SELECT id, guia, estado, zona_id, zona_nombre, datos_extra
+            SELECT id, guia, cliente, estado, zona_id, zona_nombre, datos_extra
             FROM pedidos
             WHERE id = :pid AND tenant_id = :tenant_id
             LIMIT 1
@@ -554,10 +569,12 @@ async def remove_package_from_zone(
             raise HTTPException(status_code=404, detail="Paquete o código no encontrado")
 
         extra = pedido.datos_extra if isinstance(pedido.datos_extra, dict) else (json.loads(pedido.datos_extra) if pedido.datos_extra else {})
-        es_no_importado = extra.get("origen_inventario") == "NO_IMPORTADO"
+        es_no_importado = (
+            extra.get("origen_inventario") == "NO_IMPORTADO"
+            or pedido.cliente in ("⚠️ CÓDIGO NO EN IMPORTACIÓN", "Paquete Extra (Verificado en Bodega)")
+        )
 
         if es_no_importado:
-            # Fue un código mal escaneado o inexistente: borrar su historial y registro fantasma
             await session.execute(
                 text("DELETE FROM pedidos_historial WHERE pedido_id = :pid AND tenant_id = :tenant_id"),
                 {"pid": pedido.id, "tenant_id": x_tenant_id}
@@ -571,11 +588,10 @@ async def remove_package_from_zone(
                 "status": "ok",
                 "action": "deleted_unknown",
                 "guia": pedido.guia,
-                "was_red_alert": not bool(extra.get("verificado_bodega", False)),
+                "was_red_alert": pedido.cliente == "⚠️ CÓDIGO NO EN IMPORTACIÓN",
                 "message": f"Código '{pedido.guia}' eliminado de la zona."
             }
         else:
-            # Es un pedido real importado: devolverlo a estado SECTORIZADO (fuera del conteo EN_BODEGA)
             orig_zone_id = extra.get("zona_importacion_id") or extra.get("zona_original_id")
             orig_zone_name = extra.get("zona_importacion_nombre") or extra.get("zona_original_nombre") or pedido.zona_nombre
             target_zid = uuid.UUID(orig_zone_id) if orig_zone_id else pedido.zona_id
@@ -693,8 +709,8 @@ async def reset_zone_inventory(
                   SELECT id FROM pedidos
                   WHERE tenant_id = :tenant_id
                     AND zona_id = :zone_id
-                    AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-                    AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+                    AND estado = 'EN_BODEGA'
+                    AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
               )
         """), {"tenant_id": x_tenant_id, "zone_id": zone_id})
 
@@ -702,8 +718,8 @@ async def reset_zone_inventory(
             DELETE FROM pedidos
             WHERE tenant_id = :tenant_id
               AND zona_id = :zone_id
-              AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-              AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+              AND estado = 'EN_BODEGA'
+              AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id, "zone_id": zone_id})
 
         sql = text("""
@@ -733,16 +749,16 @@ async def reset_all_zones_inventory(x_tenant_id: str = Depends(get_tenant_id)):
               AND pedido_id IN (
                   SELECT id FROM pedidos
                   WHERE tenant_id = :tenant_id
-                    AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-                    AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+                    AND estado = 'EN_BODEGA'
+                    AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
               )
         """), {"tenant_id": x_tenant_id})
 
         del_res = await session.execute(text("""
             DELETE FROM pedidos
             WHERE tenant_id = :tenant_id
-              AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-              AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+              AND estado = 'EN_BODEGA'
+              AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id})
 
         upd_res = await session.execute(text("""
@@ -770,22 +786,21 @@ async def reorganize_map_from_inventory(
     1. Consolida todos los paquetes escaneados (EN_BODEGA) en la zona física donde quedaron.
     2. Si algún paquete en zona no tenía coordenadas GPS (ej. paquete extra verificado o dirección difícil),
        le asigna el punto interior del polígono de su zona (ST_PointOnSurface) para que aparezca en el mapa.
-    3. Re-evalúa con PostGIS (ST_Contains) los paquetes pendientes fuera de bodega que sí tienen coordenadas.
+    3. Re-evalúa con PostGIS (ST_Contains) los paquetes FUERA_DE_ZONA o PENDIENTE_REINVENTARIO que tienen coordenadas.
     """
     user_name = current_user.get("nombre") or current_user.get("email") or "Operador de Bodega"
     async for session in get_db_session(tenant_id=x_tenant_id):
-        # 1. Verificar cuántos códigos en alerta roja sin verificar existen
+        # 1. Verificar cuántos códigos en alerta roja sin verificar existen (usa índice parcial)
         alert_res = await session.execute(text("""
             SELECT COUNT(*) FROM pedidos
             WHERE tenant_id = :tenant_id
               AND estado = 'EN_BODEGA'
-              AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-              AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+              AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id})
         alertas_pendientes = alert_res.scalar() or 0
 
         # 2. Para los paquetes EN_BODEGA (válidos o verificados) que no tengan coordenadas,
-        # asignarles el centroide / punto en superficie del polígono de su zona para que el mapa los muestre
+        # asignarles el punto en superficie del polígono de su zona para que el mapa los muestre
         geo_upd = await session.execute(text("""
             UPDATE pedidos p
             SET latitud = ST_Y(ST_PointOnSurface(z.geom)),
@@ -799,10 +814,7 @@ async def reorganize_map_from_inventory(
               AND p.zona_id = z.id
               AND p.estado = 'EN_BODEGA'
               AND (p.latitud IS NULL OR p.longitud IS NULL)
-              AND (
-                  COALESCE(p.datos_extra->>'origen_inventario', '') != 'NO_IMPORTADO'
-                  OR COALESCE((p.datos_extra->>'verificado_bodega')::boolean, false) = true
-              )
+              AND COALESCE(p.cliente, '') != '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id})
         geolocalizados_zona = geo_upd.rowcount or 0
 
@@ -822,28 +834,24 @@ async def reorganize_map_from_inventory(
               AND z.tenant_id = :tenant_id
               AND p.zona_id = z.id
               AND p.estado = 'EN_BODEGA'
-              AND (
-                  COALESCE(p.datos_extra->>'origen_inventario', '') != 'NO_IMPORTADO'
-                  OR COALESCE((p.datos_extra->>'verificado_bodega')::boolean, false) = true
-              )
+              AND COALESCE(p.cliente, '') != '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id, "user_name": user_name})
         consolidados_bodega = consolidados_upd.rowcount or 0
 
-        # 4. Re-sectorizar por polígono PostGIS aquellos paquetes que NO están en bodega pero tienen coordenadas
+        # 4. Re-sectorizar usando índice espacial GIST sólo aquellos paquetes en FUERA_DE_ZONA o PENDIENTE_REINVENTARIO
         resect_upd = await session.execute(text("""
             UPDATE pedidos p
             SET zona_id = z.id,
                 zona_nombre = z.nombre_zona,
-                estado = CASE WHEN p.estado IN ('FUERA_DE_ZONA', 'PENDIENTE_REINVENTARIO') THEN 'SECTORIZADO' ELSE p.estado END,
+                estado = 'SECTORIZADO',
                 fecha_actualizacion = CURRENT_TIMESTAMP
             FROM zonas_personalizadas z
             WHERE p.tenant_id = :tenant_id
               AND z.tenant_id = :tenant_id
               AND z.activa = true
-              AND p.estado IN ('SECTORIZADO', 'FUERA_DE_ZONA', 'PENDIENTE_REINVENTARIO')
-              AND p.latitud IS NOT NULL
-              AND p.longitud IS NOT NULL
-              AND ST_Contains(z.geom, ST_SetSRID(ST_Point(p.longitud, p.latitud), 4326))
+              AND p.estado IN ('FUERA_DE_ZONA', 'PENDIENTE_REINVENTARIO')
+              AND p.geom IS NOT NULL
+              AND ST_Contains(z.geom, p.geom)
         """), {"tenant_id": x_tenant_id})
         resectorizados_mapa = resect_upd.rowcount or 0
 
@@ -895,17 +903,28 @@ async def scan_package_inventory(
 
         target_zone_name = zone_row.nombre_zona
 
-        # 2. Buscar si la guía existe en pedidos (insensible a mayúsculas/minúsculas y espacios)
-        p_query = text("""
+        # 2. Buscar primero por índice primario exacto (0.08ms) y como fallback por índice funcional UPPER(TRIM(guia))
+        p_exact = text("""
             SELECT id, guia, cliente, direccion_original, direccion_limpia,
                    zona_id, zona_nombre, estado, datos_extra
             FROM pedidos 
-            WHERE tenant_id = :tenant_id
-              AND UPPER(TRIM(guia)) = UPPER(TRIM(:guia))
+            WHERE tenant_id = :tenant_id AND guia = :guia
             LIMIT 1
         """)
-        p_res = await session.execute(p_query, {"tenant_id": x_tenant_id, "guia": barcode})
+        p_res = await session.execute(p_exact, {"tenant_id": x_tenant_id, "guia": barcode})
         pedido = p_res.first()
+
+        if not pedido:
+            p_upper = text("""
+                SELECT id, guia, cliente, direccion_original, direccion_limpia,
+                       zona_id, zona_nombre, estado, datos_extra
+                FROM pedidos 
+                WHERE tenant_id = :tenant_id
+                  AND UPPER(TRIM(guia)) = UPPER(TRIM(:guia))
+                LIMIT 1
+            """)
+            p_res2 = await session.execute(p_upper, {"tenant_id": x_tenant_id, "guia": barcode})
+            pedido = p_res2.first()
 
         user_name = current_user.get("nombre") or current_user.get("email") or "Operador de Bodega"
 

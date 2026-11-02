@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.core.config import settings
 from app.core.database import admin_engine
 from app.api import tenants, zones, orders, reconciliation, team, maintenance, auth, datasets, tracking, station
@@ -50,6 +51,7 @@ cors_origins = [
     f"http://{settings.PUBLIC_DOMAIN}",
 ]
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins if not settings.is_development else ["*"],

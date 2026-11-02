@@ -111,6 +111,19 @@ def _build_order_response(r) -> OrderResponse:
     )
 
 
+_ORDER_COLUMNS = """
+    id, tenant_id, guia, cliente, telefono_cliente,
+    direccion_original, direccion_limpia, observaciones_entrega,
+    latitud, longitud, nivel_precision, precision_metros,
+    confianza_score, zona_id, zona_nombre, estado,
+    domiciliario_id, domiciliario_nombre, fecha_entrega,
+    fecha_importacion, pagado_conductor, proveedor_entrega,
+    alerta_rango_logico, detalle_alerta_rango,
+    estado_normalizacion, clave_direccion, confianza_normalizacion,
+    advertencias_normalizacion
+"""
+
+
 @router.get("/", response_model=List[OrderResponse])
 async def list_orders(
     estado: Optional[str] = Query(None),
@@ -122,11 +135,11 @@ async def list_orders(
 ):
     """Lista pedidos del tenant con filtros por estado, zona, guía o sólo paquetes activos en bodega/ruta."""
     async for session in get_db_session(tenant_id=x_tenant_id):
-        sql = "SELECT * FROM pedidos WHERE tenant_id = :tenant_id"
+        sql = f"SELECT {_ORDER_COLUMNS} FROM pedidos WHERE tenant_id = :tenant_id"
         params = {"tenant_id": x_tenant_id, "limit": limit if isinstance(limit, int) else 10000}
 
         if guia and isinstance(guia, str) and guia.strip():
-            sql += " AND (guia = :guia OR LOWER(guia) = LOWER(:guia))"
+            sql += " AND (guia = :guia OR UPPER(TRIM(guia)) = UPPER(TRIM(:guia)))"
             params["guia"] = guia.strip()
         if estado and isinstance(estado, str):
             sql += " AND estado = :estado"
@@ -136,7 +149,11 @@ async def list_orders(
             params["zona_id"] = zona_id
 
         if solo_bodega:
-            sql += " AND (estado IS NULL OR estado NOT IN ('ENTREGADO', 'PERDIDO', 'DEVUELTO', 'DEVUELTO_PROVEEDOR', 'DEVOLUCION', 'ANULADO'))"
+            sql += (
+                " AND (estado IS NULL OR estado NOT IN ("
+                "'ENTREGADO', 'PERDIDO', 'DEVUELTO', 'DEVUELTO_PROVEEDOR', 'DEVOLUCION', 'ANULADO', 'PENDIENTE_REINVENTARIO'"
+                ")) AND COALESCE(cliente, '') != '⚠️ CÓDIGO NO EN IMPORTACIÓN'"
+            )
 
         sql += " ORDER BY fecha_importacion DESC LIMIT :limit"
 
@@ -294,22 +311,22 @@ async def process_batch_orders(
 
     async for session in get_db_session(tenant_id=x_tenant_id):
         # Al iniciar una nueva importación masiva, reiniciar los contadores de inventario en bodega a cero
-        # y limpiar códigos no importados sin verificar del turno anterior.
+        # y limpiar códigos no importados sin verificar del turno anterior (usando índice parcial instantáneo).
         await session.execute(text("""
             DELETE FROM pedidos_historial
             WHERE tenant_id = :tenant_id
               AND pedido_id IN (
                   SELECT id FROM pedidos
                   WHERE tenant_id = :tenant_id
-                    AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-                    AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+                    AND estado = 'EN_BODEGA'
+                    AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
               )
         """), {"tenant_id": x_tenant_id})
         await session.execute(text("""
             DELETE FROM pedidos
             WHERE tenant_id = :tenant_id
-              AND COALESCE(datos_extra->>'origen_inventario', '') = 'NO_IMPORTADO'
-              AND COALESCE((datos_extra->>'verificado_bodega')::boolean, false) = false
+              AND estado = 'EN_BODEGA'
+              AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
         """), {"tenant_id": x_tenant_id})
         await session.execute(text("""
             UPDATE pedidos
