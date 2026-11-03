@@ -4,6 +4,7 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
 import { Toast } from '../components/ui/Toast';
 import { RouteUploader } from '../components/reconciliation/RouteUploader';
+import { QrMovementStation } from '../components/reconciliation/QrMovementStation';
 import { NominaLiquidacionView } from '../components/payroll/NominaLiquidacionView';
 import { dataCache } from '../lib/dataCache';
 import {
@@ -1050,6 +1051,20 @@ export function ControlConciliacionPage() {
           </div>
         </GlassCard>
       </div>
+
+      {/* Estación Inferior de Códigos QR y Movimientos para App del Proveedor */}
+      <QrMovementStation
+        orders={orders}
+        filteredOrders={filteredOrders}
+        filterDriver={filterDriver}
+        filterState={filterState}
+        playScannerSound={playScannerSound}
+        setToast={setToast}
+        onMovementApplied={() => {
+          dataCache.notifyMutation();
+          fetchReconciliationData(true);
+        }}
+      />
 
       {/* DISCREET ROUTE UPLOAD MODAL */}
       {showUploadModal && (
