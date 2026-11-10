@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from app.core.database import get_db_session
 from app.core.security import decode_access_token
+from app.core.dependencies import get_current_user, require_admin_user
 
 router = APIRouter(prefix="/tenants", tags=["Empresas / Tenants SaaS"])
 
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/tenants", tags=["Empresas / Tenants SaaS"])
 def require_super_admin(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
-    token = authorization.split(" ")[1]
+    token = authorization.split(" ", 1)[1]
     payload = decode_access_token(token)
     if not payload or "user" not in payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
@@ -57,7 +58,7 @@ class TenantResponse(BaseModel):
 @router.get("/saas-stats")
 async def get_saas_stats(admin: dict = Depends(require_super_admin)):
     """Obtiene métricas y KPIs globales para la Consola SaaS Admin."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         # Total empresas y activas
         emp_res = await session.execute(text("""
             SELECT
@@ -95,7 +96,7 @@ async def get_saas_stats(admin: dict = Depends(require_super_admin)):
 @router.get("/", response_model=List[TenantResponse])
 async def list_tenants(admin: dict = Depends(require_super_admin)):
     """Lista empresas registradas con métricas de consumo de cuota (Consola SaaS Admin)."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("""
             SELECT e.id, e.nombre, e.nit, e.email_contacto, e.telefono, e.cuota_pedidos_mes, e.activo,
                    COALESCE(p.cnt, 0)::int as pedidos_mes_actual
@@ -137,7 +138,7 @@ async def create_tenant(req: TenantCreate, admin: dict = Depends(require_super_a
     if not tenant_id:
         tenant_id = f"emp_{uuid.uuid4().hex[:8]}"
 
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         check_query = text("SELECT id FROM public.empresas WHERE id = :id OR nit = :nit LIMIT 1")
         res_check = await session.execute(check_query, {"id": tenant_id, "nit": req.nit})
         if res_check.first():
@@ -169,7 +170,7 @@ async def create_tenant(req: TenantCreate, admin: dict = Depends(require_super_a
 @router.put("/{tenant_id}", response_model=TenantResponse)
 async def update_tenant(tenant_id: str, req: TenantUpdate, admin: dict = Depends(require_super_admin)):
     """Actualiza la información comercial o cuota de envíos de una empresa."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         get_sql = text("SELECT id, nombre, nit, email_contacto, telefono, cuota_pedidos_mes, activo FROM public.empresas WHERE id = :id")
         res = await session.execute(get_sql, {"id": tenant_id})
         row = res.first()
@@ -206,7 +207,7 @@ async def update_tenant(tenant_id: str, req: TenantUpdate, admin: dict = Depends
 @router.patch("/{tenant_id}/status")
 async def toggle_tenant_status(tenant_id: str, activo: bool, admin: dict = Depends(require_super_admin)):
     """Activa o desactiva el acceso a la plataforma para una empresa."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("UPDATE public.empresas SET activo = :activo WHERE id = :id RETURNING id, nombre, activo")
         res = await session.execute(query, {"id": tenant_id, "activo": activo})
         await session.commit()
@@ -274,9 +275,12 @@ class MultiColumnMappingRequest(BaseModel):
 
 @router.get("/global/column-mapping")
 @router.get("/{tenant_id}/column-mapping")
-async def get_column_mapping(tenant_id: str):
+async def get_column_mapping(
+    tenant_id: str = "global",
+    current_user: dict = Depends(get_current_user)
+):
     """Obtiene las plantillas de mapeo de columnas globales que aplican a todas las empresas."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("SELECT mapeo_columnas FROM public.empresas WHERE id = 'global' LIMIT 1")
         res = await session.execute(query)
         row = res.first()
@@ -322,11 +326,15 @@ async def get_column_mapping(tenant_id: str):
 
 @router.post("/global/column-mapping")
 @router.post("/{tenant_id}/column-mapping")
-async def save_column_mapping(tenant_id: str, mapping: MultiColumnMappingRequest):
-    """Guarda o actualiza las plantillas de mapeo de columnas a nivel global."""
+async def save_column_mapping(
+    mapping: MultiColumnMappingRequest,
+    tenant_id: str = "global",
+    admin_user: dict = Depends(require_admin_user)
+):
+    """Guarda o actualiza las plantillas de mapeo de columnas a nivel global (Requiere Admin)."""
     import json
     target_id = "global"
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         check_sql = text("SELECT id, mapeo_columnas FROM public.empresas WHERE id = :id LIMIT 1")
         res_check = await session.execute(check_sql, {"id": target_id})
         row = res_check.first()
@@ -377,5 +385,6 @@ async def save_column_mapping(tenant_id: str, mapping: MultiColumnMappingRequest
         await session.commit()
         up_row = res_up.first()
         return {"status": "ok", "mapeo_columnas": up_row.mapeo_columnas if up_row else curr_data}
+
 
 

@@ -4,7 +4,7 @@ import uuid
 import json
 from fastapi import APIRouter, HTTPException, Header, status, Depends, Query
 from pydantic import BaseModel
-from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.dependencies import get_current_user, get_tenant_id, require_admin_user
 from app.core.audit import registrar_historial_evento
 from sqlalchemy import text
 from app.core.database import get_db_session
@@ -260,8 +260,11 @@ async def import_zone_geojson(
 
 
 @router.delete("/purge")
-async def purge_all_zones(x_tenant_id: str = Depends(get_tenant_id)):
-    """Elimina todas las zonas personalizadas de la empresa."""
+async def purge_all_zones(
+    admin_user: dict = Depends(require_admin_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """Elimina todas las zonas personalizadas de la empresa (Requiere Admin)."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id")
         res = await session.execute(sql, {"tenant_id": x_tenant_id})
@@ -270,8 +273,12 @@ async def purge_all_zones(x_tenant_id: str = Depends(get_tenant_id)):
 
 
 @router.delete("/{zone_id}")
-async def delete_zone(zone_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
-    """Elimina una zona específica por ID."""
+async def delete_zone(
+    zone_id: uuid.UUID,
+    admin_user: dict = Depends(require_admin_user),
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """Elimina una zona específica por ID (Requiere Admin)."""
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM zonas_personalizadas WHERE id = :id AND tenant_id = :tenant_id")
         res = await session.execute(sql, {"id": zone_id, "tenant_id": x_tenant_id})

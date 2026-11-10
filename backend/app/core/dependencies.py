@@ -48,3 +48,31 @@ def get_tenant_id(
 
     return jwt_tenant
 
+
+def require_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Exige que el usuario autenticado tenga rol 'admin_empresa' o 'super_admin'
+    (o esté en sesión de soporte 'is_impersonating').
+    """
+    rol = (current_user.get("rol") or "").strip().lower()
+    if rol not in ("admin_empresa", "super_admin") and not current_user.get("is_impersonating"):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso restringido. Se requieren permisos de Administrador de Empresa o Super Admin."
+        )
+    return current_user
+
+
+def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Exige que el usuario autenticado sea Super Admin Global (o sesión de soporte).
+    """
+    rol = (current_user.get("rol") or "").strip().lower()
+    if rol != "super_admin" and not current_user.get("is_impersonating"):
+        raise HTTPException(
+            status_code=403,
+            detail="Acceso denegado. Se requieren permisos de Super Admin Global para esta acción."
+        )
+    return current_user
+
+

@@ -1,14 +1,17 @@
 from typing import List, Optional
 import os
-import shutil
+import re
 import uuid
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
+from app.core.dependencies import get_current_user
 from app.api.tenants import require_super_admin
 
 router = APIRouter(prefix="/datasets", tags=["Datasets Catastrales SaaS"])
+
+MAX_DATASET_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 class DatasetResponse(BaseModel):
@@ -22,9 +25,9 @@ class DatasetResponse(BaseModel):
 
 
 @router.get("/", response_model=List[DatasetResponse])
-async def list_datasets():
+async def list_datasets(current_user: dict = Depends(get_current_user)):
     """Lista datasets catastrales registrados por ciudad."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("""
             SELECT id, ciudad, departamento, total_predios, total_ejes, activo, fecha_importacion::text
             FROM public.datasets_ciudades
@@ -55,29 +58,42 @@ async def upload_dataset(
 ):
     """Carga e indexación de datasets catastrales (GeoJSON / GPKG) para una ciudad."""
     ciudad_clean = ciudad.strip().upper()
-    dataset_id = ciudad_clean.lower().replace(" ", "_")
+    dataset_id = re.sub(r"[^a-z0-9_]", "_", ciudad_clean.lower()).strip("_")
 
-    if not file.filename.endswith(('.geojson', '.gpkg', '.json', '.zip')):
+    raw_filename = os.path.basename(file.filename or "")
+    safe_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", raw_filename)
+    if not safe_filename.lower().endswith(('.geojson', '.gpkg', '.json', '.zip')):
         raise HTTPException(
             status_code=400,
             detail="Formato no soportado. Debe ser un archivo .gpkg, .geojson o .zip"
         )
 
-    # Guardar archivo temporalmente
+    # Guardar archivo temporalmente con control estricto de tamaño
     temp_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "temp_uploads"))
     os.makedirs(temp_dir, exist_ok=True)
-    temp_filepath = os.path.join(temp_dir, f"{uuid.uuid4()}_{file.filename}")
+    temp_filepath = os.path.join(temp_dir, f"{uuid.uuid4()}_{safe_filename}")
 
     try:
+        total_bytes = 0
         with open(temp_filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_DATASET_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="El archivo excede el tamaño máximo permitido de 100 MB."
+                    )
+                buffer.write(chunk)
 
         # Conteo básico o simulación de lectura si el archivo es GeoJSON / datos
         predios_count = 0
         ejes_count = 0
 
         # Si el archivo es GeoJSON / JSON, contar features
-        if temp_filepath.endswith(('.geojson', '.json')):
+        if temp_filepath.lower().endswith(('.geojson', '.json')):
             import json
             try:
                 with open(temp_filepath, "r", encoding="utf-8") as f:
@@ -87,7 +103,7 @@ async def upload_dataset(
             except Exception:
                 predios_count = 5000  # Valor por defecto si no es Parseable directamente
 
-        async for session in get_db_session():
+        async for session in get_db_session(tenant_id="global"):
             query = text("""
                 INSERT INTO public.datasets_ciudades (id, ciudad, departamento, total_predios, total_ejes, activo)
                 VALUES (:id, :ciudad, :departamento, :predios, :ejes, true)
@@ -125,7 +141,7 @@ async def upload_dataset(
 @router.patch("/{dataset_id}/status")
 async def toggle_dataset_status(dataset_id: str, activo: bool, admin: dict = Depends(require_super_admin)):
     """Activa o desactiva la cobertura catastral de una ciudad."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("""
             UPDATE public.datasets_ciudades
             SET activo = :activo
@@ -143,7 +159,7 @@ async def toggle_dataset_status(dataset_id: str, activo: bool, admin: dict = Dep
 @router.delete("/{dataset_id}")
 async def delete_dataset(dataset_id: str, admin: dict = Depends(require_super_admin)):
     """Elimina el registro de dataset de una ciudad."""
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         query = text("DELETE FROM public.datasets_ciudades WHERE id = :id RETURNING id")
         res = await session.execute(query, {"id": dataset_id})
         await session.commit()
@@ -151,3 +167,4 @@ async def delete_dataset(dataset_id: str, admin: dict = Depends(require_super_ad
         if not row:
             raise HTTPException(status_code=404, detail="Dataset no encontrado")
         return {"status": "ok", "deleted_id": row.id}
+

@@ -33,10 +33,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_show_docs = settings.is_development or settings.ENABLE_DOCS
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url="/docs",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json" if _show_docs else None,
+    docs_url="/docs" if _show_docs else None,
+    redoc_url="/redoc" if _show_docs else None,
     lifespan=lifespan
 )
 

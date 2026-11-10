@@ -301,6 +301,12 @@ async def process_batch_orders(
             pedidos=[]
         )
 
+    if len(req.items) > 10000:
+        raise HTTPException(
+            status_code=413,
+            detail="El lote supera el límite máximo permitido de 10.000 guías por petición."
+        )
+
     processed_orders = []
     exitosos = 0
     fuera_zona = 0

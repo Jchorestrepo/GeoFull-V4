@@ -1,7 +1,9 @@
 import httpx
+import time
+from collections import defaultdict
 from typing import Optional
 import uuid
-from fastapi import APIRouter, HTTPException, Header, status, Depends
+from fastapi import APIRouter, HTTPException, Header, Request, status, Depends
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from app.core.database import get_db_session
@@ -9,6 +11,30 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Autenticación & Sesiones"])
+
+# Rate limiter en memoria contra fuerza bruta en /auth/login (máx. 10 intentos fallidos cada 5 min por IP/correo)
+_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_WINDOW_SEC = 300
+_RATE_LIMIT_MAX_FAILURES = 10
+
+
+def _check_login_rate_limit(key: str) -> None:
+    now = time.time()
+    recent = [ts for ts in _LOGIN_ATTEMPTS.get(key, []) if now - ts < _RATE_LIMIT_WINDOW_SEC]
+    _LOGIN_ATTEMPTS[key] = recent
+    if len(recent) >= _RATE_LIMIT_MAX_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos de inicio de sesión fallidos. Intente nuevamente en 5 minutos."
+        )
+
+
+def _record_login_failure(key: str) -> None:
+    _LOGIN_ATTEMPTS[key].append(time.time())
+
+
+def _clear_login_failures(key: str) -> None:
+    _LOGIN_ATTEMPTS.pop(key, None)
 
 
 class LoginRequest(BaseModel):
@@ -35,15 +61,19 @@ class UserRegisterRequest(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     """Inicio de sesión de usuarios con correo y contraseña."""
     email_clean = req.email.strip().lower()
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{email_clean}"
 
-    async for session in get_db_session():
+    _check_login_rate_limit(rate_key)
+
+    async for session in get_db_session(tenant_id="global"):
         # Consultar usuario en la base de datos
         sql = text("""
             SELECT u.id, u.email, u.password_hash, u.nombre_completo, u.rol, u.tenant_id, u.activo,
-                   e.nombre as empresa_nombre
+                   e.nombre as empresa_nombre, e.activo as empresa_activa
             FROM usuarios u
             LEFT JOIN public.empresas e ON u.tenant_id = e.id
             WHERE LOWER(u.email) = :email
@@ -52,36 +82,12 @@ async def login(req: LoginRequest):
         res = await session.execute(sql, {"email": email_clean})
         user_row = res.first()
 
-        # Si no existe usuario en la BD, auto-crear usuarios y empresas demo para pruebas iniciales
+        # Autocreación de usuarios demo ÚNICAMENTE permitida en entorno de desarrollo (ENVIRONMENT=development)
         if not user_row:
-            if email_clean == "admin@geofull.app":
-                # Super Admin Global - Asegurar que el tenant 'global' exista en public.empresas
-                await session.execute(text("""
-                    INSERT INTO public.empresas (id, nombre, nit, email_contacto, cuota_pedidos_mes, activo)
-                    VALUES ('global', 'SaaS Global Super Admin', '000000000-0', 'admin@geofull.app', 9999999, true)
-                    ON CONFLICT (id) DO NOTHING
-                """))
-                await session.commit()
-
-                new_id = uuid.uuid4()
-                pwd_hash = hash_password(req.password or "admin123")
-                ins_sql = text("""
-                    INSERT INTO usuarios (id, tenant_id, email, password_hash, nombre_completo, rol, activo)
-                    VALUES (:id, 'global', 'admin@geofull.app', :pwd, 'Super Admin Global', 'super_admin', true)
-                    RETURNING id, email, password_hash, nombre_completo, rol, tenant_id, activo
-                """)
-                ins_res = await session.execute(ins_sql, {"id": new_id, "pwd": pwd_hash})
-                await session.commit()
-                
-                # Re-consultar con JOIN a empresas
-                refetch = await session.execute(sql, {"email": email_clean})
-                user_row = refetch.first()
-
-            elif email_clean in ("demo@empresa.com", "admin@dexpress.com.co", "coordinadora@empresa.com", "operario@geofull.app"):
+            if settings.is_development and email_clean in ("demo@empresa.com", "admin@dexpress.com.co", "coordinadora@empresa.com", "operario@geofull.app"):
                 t_id = "emp_default_01" if ("dexpress" in email_clean or "coordinadora" in email_clean) else "empresa_demo"
                 emp_name = "DeXpress Colombia SAS" if t_id == "emp_default_01" else "Empresa Demo Logística S.A.S."
 
-                # Asegurar que la empresa exista en public.empresas
                 emp_check = await session.execute(text("SELECT id FROM public.empresas WHERE id = :id LIMIT 1"), {"id": t_id})
                 if not emp_check.first():
                     await session.execute(text("""
@@ -103,16 +109,16 @@ async def login(req: LoginRequest):
                     VALUES (:id, :t_id, :email, :pwd, :nombre, 'admin_empresa', true)
                     RETURNING id, email, password_hash, nombre_completo, rol, tenant_id, activo
                 """)
-                ins_res = await session.execute(ins_sql, {
+                await session.execute(ins_sql, {
                     "id": new_id, "t_id": t_id, "email": email_clean,
                     "pwd": pwd_hash, "nombre": f"Admin {t_id.capitalize()}"
                 })
                 await session.commit()
 
-                # Re-consultar con JOIN a empresas
                 refetch = await session.execute(sql, {"email": email_clean})
                 user_row = refetch.first()
             else:
+                _record_login_failure(rate_key)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Credenciales incorrectas o usuario no registrado."
@@ -125,12 +131,22 @@ async def login(req: LoginRequest):
                 detail="El acceso de este usuario se encuentra inactivo."
             )
 
-        # Validar contraseña
-        if user_row.password_hash and not verify_password(req.password, user_row.password_hash):
+        # Verificar si la empresa asociada está suspendida/inactiva (salvo super_admin global)
+        if user_row.rol != "super_admin" and getattr(user_row, "empresa_activa", True) is False:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="La empresa asociada a esta cuenta se encuentra suspendida o inactiva."
+            )
+
+        # Validar contraseña obligatoriamente
+        if not user_row.password_hash or not verify_password(req.password, user_row.password_hash):
+            _record_login_failure(rate_key)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Contraseña incorrecta."
             )
+
+        _clear_login_failures(rate_key)
 
         # Generar token JWT
         user_dict = {
@@ -186,7 +202,7 @@ async def google_login(req: GoogleAuthRequest):
     # Regla Especial Super Admin: verificar contra lista de super admins configurados
     is_super_admin = (email.lower() in settings.super_admin_emails_list)
 
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         sql = text("""
             SELECT u.id, u.email, u.nombre_completo, u.rol, u.tenant_id, u.activo,
                    e.nombre as empresa_nombre, e.activo as empresa_activa
@@ -298,16 +314,38 @@ async def google_login(req: GoogleAuthRequest):
 
 @router.get("/me")
 async def get_current_user_profile(authorization: Optional[str] = Header(None)):
-    """Obtiene la información del usuario autenticado desde el token JWT."""
+    """Obtiene la información del usuario autenticado desde el token JWT y verifica su vigencia en BD."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-    token = authorization.split(" ")[1]
+    token = authorization.split(" ", 1)[1]
     payload = decode_access_token(token)
     if not payload or "user" not in payload:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
-    return payload["user"]
+    user = payload["user"]
+    if not user.get("is_impersonating") and user.get("id"):
+        async for session in get_db_session(tenant_id="global"):
+            try:
+                res = await session.execute(text("""
+                    SELECT u.activo, u.rol, u.tenant_id, e.activo as empresa_activa
+                    FROM usuarios u
+                    LEFT JOIN public.empresas e ON u.tenant_id = e.id
+                    WHERE u.id = CAST(:uid AS UUID)
+                    LIMIT 1
+                """), {"uid": user["id"]})
+                row = res.first()
+                if row:
+                    if row.activo is False:
+                        raise HTTPException(status_code=401, detail="Cuenta de usuario desactivada")
+                    if row.rol != "super_admin" and row.empresa_activa is False:
+                        raise HTTPException(status_code=401, detail="Empresa suspendida o inactiva")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+
+    return user
 
 
 @router.post("/impersonate")
@@ -319,12 +357,12 @@ async def impersonate_tenant(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
 
-    token = authorization.split(" ")[1]
+    token = authorization.split(" ", 1)[1]
     payload = decode_access_token(token)
     if not payload or payload.get("user", {}).get("rol") != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede suplantar empresas")
 
-    async for session in get_db_session():
+    async for session in get_db_session(tenant_id="global"):
         emp_res = await session.execute(
             text("SELECT id, nombre FROM public.empresas WHERE id = :id LIMIT 1"),
             {"id": target_tenant_id}
@@ -348,3 +386,4 @@ async def impersonate_tenant(
             "access_token": token,
             "user": user_dict
         }
+

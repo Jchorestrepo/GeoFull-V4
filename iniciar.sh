@@ -25,7 +25,18 @@ fuser -k 8000/tcp 8080/tcp 8081/tcp 5173/tcp 2>/dev/null || true
 pkill -f "uvicorn app.main" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
 
-# Cargar variables de entorno si existe .env
+# Cargar variables de entorno si existe .env; asegurar SECRET_KEY criptográfico único
+if [ ! -f .env ]; then
+    echo -e "      Creando archivo .env con SECRET_KEY criptográfico único..."
+    RAND_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || openssl rand -hex 32)
+    echo "SECRET_KEY=${RAND_KEY}" > .env
+    chmod 600 .env 2>/dev/null || true
+elif ! grep -q "^SECRET_KEY=" .env; then
+    RAND_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || openssl rand -hex 32)
+    echo "" >> .env
+    echo "SECRET_KEY=${RAND_KEY}" >> .env
+fi
+
 if [ -f .env ]; then
     echo -e "      Cargando variables de entorno desde .env..."
     set -a

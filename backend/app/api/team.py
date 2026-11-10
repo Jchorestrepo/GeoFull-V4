@@ -4,19 +4,21 @@ from fastapi import APIRouter, HTTPException, Header, status, Depends
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from app.core.database import get_db_session
-from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.dependencies import get_current_user, get_tenant_id, require_admin_user
 
 router = APIRouter(prefix="/team", tags=["Gestión de Equipo / Supervisores"])
 
+ALLOWED_TEAM_ROLES = {"supervisor", "admin_empresa", "operario", "jefe_zona"}
 
-def require_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
-    rol = current_user.get("rol", "")
-    if rol not in ("admin_empresa", "super_admin") and not current_user.get("is_impersonating"):
+
+def _validate_team_role(raw_role: str) -> str:
+    rol_clean = (raw_role or "operario").strip().lower()
+    if rol_clean not in ALLOWED_TEAM_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso restringido. Solo administradores pueden gestionar miembros del equipo."
+            detail=f"Rol '{raw_role}' no permitido. Roles válidos para empresa: supervisor, admin_empresa, operario."
         )
-    return current_user
+    return rol_clean
 
 
 class TeamMemberCreate(BaseModel):
@@ -69,6 +71,8 @@ async def create_team_member(
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Registra un nuevo integrante en el equipo de la empresa."""
+    safe_rol = _validate_team_role(req.rol)
+
     async for session in get_db_session(tenant_id=x_tenant_id):
         # Verificar duplicado de email en la empresa
         check_sql = text("SELECT id FROM usuarios WHERE email = :email AND tenant_id = :tenant_id LIMIT 1")
@@ -87,7 +91,7 @@ async def create_team_member(
             "tenant_id": x_tenant_id,
             "email": req.email.strip().lower(),
             "nombre_completo": req.nombre_completo.strip(),
-            "rol": req.rol.strip().lower(),
+            "rol": safe_rol,
             "activo": req.activo
         })
         await session.commit()
@@ -110,6 +114,8 @@ async def update_team_member(
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Actualiza la información de un integrante del equipo."""
+    safe_rol = _validate_team_role(req.rol)
+
     async for session in get_db_session(tenant_id=x_tenant_id):
         update_sql = text("""
             UPDATE usuarios
@@ -125,7 +131,7 @@ async def update_team_member(
             "tenant_id": x_tenant_id,
             "nombre_completo": req.nombre_completo.strip(),
             "email": req.email.strip().lower(),
-            "rol": req.rol.strip().lower(),
+            "rol": safe_rol,
             "activo": req.activo
         })
         await session.commit()
@@ -149,6 +155,9 @@ async def delete_team_member(
     x_tenant_id: str = Depends(get_tenant_id)
 ):
     """Elimina o revoca el acceso a un integrante del equipo."""
+    if str(member_id) == str(admin_user.get("id", "")):
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta activa.")
+
     async for session in get_db_session(tenant_id=x_tenant_id):
         sql = text("DELETE FROM usuarios WHERE id = :id AND tenant_id = :tenant_id")
         res = await session.execute(sql, {"id": member_id, "tenant_id": x_tenant_id})
@@ -156,3 +165,4 @@ async def delete_team_member(
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="Integrante del equipo no encontrado")
         return {"status": "ok", "message": "Acceso revocado exitosamente"}
+

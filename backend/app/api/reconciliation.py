@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Header, Query, status, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from app.core.database import get_db_session
-from app.core.dependencies import get_current_user, get_tenant_id
+from app.core.dependencies import get_current_user, get_tenant_id, require_admin_user
 from app.core.audit import registrar_historial_evento
 
 router = APIRouter(prefix="/reconciliation", tags=["Control & Conciliación Diaria (Etapa 5)"])
@@ -153,6 +153,12 @@ async def process_batch_routes(
     if not req.items:
         raise HTTPException(status_code=400, detail="El lote de rutas está vacío")
 
+    if len(req.items) > 10000:
+        raise HTTPException(
+            status_code=413,
+            detail="El lote de rutas supera el límite máximo permitido de 10.000 registros por petición."
+        )
+
     async for session in get_db_session(x_tenant_id):
         total_items = len(req.items)
         entregados_count = 0
@@ -293,7 +299,11 @@ async def process_batch_routes(
 
 
 @router.post("/drivers/unify")
-async def unify_drivers(req: DriverUnifyRequest, x_tenant_id: str = Depends(get_tenant_id)):
+async def unify_drivers(
+    req: DriverUnifyRequest,
+    x_tenant_id: str = Depends(get_tenant_id),
+    admin_user: dict = Depends(require_admin_user)
+):
     """
     Unifica dos o más registros de domiciliarios que correspondan a la misma persona.
     Combina sus alias_nombres, reasigna todos sus pedidos históricos, liquidaciones,
@@ -1370,7 +1380,11 @@ async def list_novedades(
 
 
 @router.post("/payroll/novedades", status_code=status.HTTP_201_CREATED)
-async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Depends(get_tenant_id)):
+async def create_novedad(
+    req: NovedadCreateRequest,
+    x_tenant_id: str = Depends(get_tenant_id),
+    admin_user: dict = Depends(require_admin_user)
+):
     """Registra un Vale/Anticipo (-), Bono (+) o Penalidad (-) para un trabajador."""
     if req.monto <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
@@ -1408,7 +1422,11 @@ async def create_novedad(req: NovedadCreateRequest, x_tenant_id: str = Depends(g
 
 
 @router.delete("/payroll/novedades/{novedad_id}")
-async def delete_novedad(novedad_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
+async def delete_novedad(
+    novedad_id: uuid.UUID,
+    x_tenant_id: str = Depends(get_tenant_id),
+    admin_user: dict = Depends(require_admin_user)
+):
     """Elimina una novedad de nómina."""
     async for session in get_db_session(x_tenant_id):
         sql = text("DELETE FROM novedades_nomina WHERE tenant_id = :tenant_id AND id = :id RETURNING id")
@@ -1710,7 +1728,11 @@ async def get_driver_payroll_orders(
 
 
 @router.post("/payroll/pay")
-async def mark_payroll_as_paid(req: PayrollPayRequest, x_tenant_id: str = Depends(get_tenant_id)):
+async def mark_payroll_as_paid(
+    req: PayrollPayRequest,
+    x_tenant_id: str = Depends(get_tenant_id),
+    admin_user: dict = Depends(require_admin_user)
+):
     """
     Marca las nóminas de los domiciliarios seleccionados como PAGADA (individual o masivo).
     Soporta monto personalizado de descuento de vales/anticipos (abono parcial / diferido).
@@ -2144,7 +2166,11 @@ async def get_payroll_payment_history(
 
 
 @router.post("/payroll/periods")
-async def create_payroll_period(req: PeriodoNominaCreate, x_tenant_id: str = Depends(get_tenant_id)):
+async def create_payroll_period(
+    req: PeriodoNominaCreate,
+    x_tenant_id: str = Depends(get_tenant_id),
+    admin_user: dict = Depends(require_admin_user)
+):
     """
     Fija o crea un nuevo período de nómina activo para la empresa.
     """
