@@ -19,7 +19,10 @@ import {
   X,
   Map,
   Copy,
-  Check
+  Check,
+  GitBranch,
+  GitMerge,
+  Plus
 } from 'lucide-react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Badge } from '../components/ui/Badge';
@@ -195,6 +198,38 @@ export function InventarioZonasPage() {
     }
   }, [inspectZone]);
 
+  const handleSubdivideZone = async (zone) => {
+    const parentId = zone.parent_zone_id || zone.id;
+    try {
+      const res = await axios.post(`${API_BASE}/zones/${parentId}/subdivide`, {}, { headers: authHeaders });
+      showToast(res.data?.message || 'Zona dividida correctamente', 'success');
+      if (activeZone?.id === zone.id) {
+        setActiveZone(null);
+      }
+      await fetchSummary();
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Error al dividir la zona', 'error');
+    }
+  };
+
+  const handleMergeZone = async (zone) => {
+    const parentId = zone.parent_zone_id || zone.id;
+    const parentName = zone.parent_nombre || zone.nombre;
+    if (!window.confirm(`¿Unir las subzonas de "${parentName}" y volver a una sola zona en inventario? Todos los paquetes escaneados se conservarán.`)) {
+      return;
+    }
+    try {
+      const res = await axios.delete(`${API_BASE}/zones/${parentId}/subdivide`, { headers: authHeaders });
+      showToast(res.data?.message || 'Subzonas unidas correctamente', 'success');
+      if (activeZone?.parent_zone_id === parentId) {
+        setActiveZone(null);
+      }
+      await fetchSummary();
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Error al unir las subzonas', 'error');
+    }
+  };
+
   const openZonePackagesModal = async (zone, defaultTab = 'bodega') => {
     setInspectZone(zone);
     setModalSearch('');
@@ -299,7 +334,11 @@ export function InventarioZonasPage() {
 
         const res = await axios.post(
           `${API_BASE}/zones/inventory-scan-package`,
-          { barcode: code, zone_id: activeZone.id },
+          {
+            barcode: code,
+            zone_id: activeZone.parent_zone_id || activeZone.id,
+            subzone_id: activeZone.subzone_id || null
+          },
           { headers: authHeaders }
         );
 
@@ -847,6 +886,11 @@ export function InventarioZonasPage() {
                             <h4 className="text-xs font-bold text-white truncate" title={z.nombre}>
                               {z.nombre}
                             </h4>
+                            {z.is_subzone && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-[9px] font-bold text-blue-300 shrink-0">
+                                SUB {z.letra}
+                              </span>
+                            )}
                           </div>
                           {hasRedAlert ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-500 text-white flex items-center gap-1 shrink-0">
@@ -870,7 +914,11 @@ export function InventarioZonasPage() {
                             CB: <b className="text-slate-300">{z.codigo_barras}</b>
                           </span>
                           <span className="text-[11px] font-mono text-slate-300 mt-0.5 block">
-                            Esperados: <b>{z.total_esperados || 0}</b>
+                            {z.is_subzone ? (
+                              <>Total zona: <b>{z.parent_total_esperados || 0}</b></>
+                            ) : (
+                              <>Esperados: <b>{z.total_esperados || 0}</b></>
+                            )}
                           </span>
                         </div>
                         <div className="text-right">
@@ -887,24 +935,68 @@ export function InventarioZonasPage() {
                         </div>
                       </div>
 
-                      {/* Botón para visualizar los códigos de la zona */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openZonePackagesModal(z);
-                        }}
-                        className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                          hasRedAlert
-                            ? 'bg-red-500 hover:bg-red-400 text-white shadow-md shadow-red-500/30'
-                            : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10'
-                        }`}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        {hasRedAlert
-                          ? `Revisar Códigos (${z.alertas_rojas} en rojo)`
-                          : `Ver Códigos (${z.total_bodega})`}
-                      </button>
+                      {/* Botones de acción de la tarjeta */}
+                      <div className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openZonePackagesModal(z);
+                          }}
+                          className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            hasRedAlert
+                              ? 'bg-red-500 hover:bg-red-400 text-white shadow-md shadow-red-500/30'
+                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-white/10'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          {hasRedAlert
+                            ? `Revisar Códigos (${z.alertas_rojas} en rojo)`
+                            : `Ver Códigos (${z.total_bodega})`}
+                        </button>
+
+                        {!z.is_subzone ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSubdivideZone(z);
+                            }}
+                            title="Dividir esta zona en subzonas A y B solo para inventario (no afecta el mapa)"
+                            className="w-full py-1.5 px-3 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/25 transition-colors cursor-pointer"
+                          >
+                            <GitBranch className="w-3.5 h-3.5" />
+                            Dividir zona (A / B)
+                          </button>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSubdivideZone(z);
+                              }}
+                              title="Agregar otra subzona (C, D...)"
+                              className="py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/25 transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Letra
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMergeZone(z);
+                              }}
+                              title="Quitar división y consolidar en la zona original"
+                              className="py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/25 transition-colors cursor-pointer"
+                            >
+                              <GitMerge className="w-3 h-3" />
+                              Unir
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

@@ -15,6 +15,8 @@ export function ZoneManager() {
   const [nombreZona, setNombreZona] = useState('');
   const [codigoZona, setCodigoZona] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
+  const [replaceExisting, setReplaceExisting] = useState(false);
+  const [purgingAll, setPurgingAll] = useState(false);
   const [toast, setToast] = useState(null);
 
   const tenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
@@ -66,6 +68,13 @@ export function ZoneManager() {
       return;
     }
 
+    if (replaceExisting && zones.length > 0) {
+      const ok = window.confirm(
+        `Se eliminarán las ${zones.length} zona(s) existente(s) y se reemplazarán por las del nuevo GeoJSON. ¿Continuar?`
+      );
+      if (!ok) return;
+    }
+
     setUploading(true);
     try {
       const textContent = await selectedFile.text();
@@ -81,7 +90,8 @@ export function ZoneManager() {
       const payload = {
         nombre_zona: nombreZona.trim(),
         codigo_zona: codigoZona.trim() || 'ZONA-CUSTOM',
-        geojson_geometry: geojsonObj
+        geojson_geometry: geojsonObj,
+        replace_existing: replaceExisting
       };
 
       const res = await axios.post(`${API_BASE}/zones/import-geojson`, payload, {
@@ -97,6 +107,7 @@ export function ZoneManager() {
       const fileInput = document.getElementById('geojson-file-input');
       if (fileInput) fileInput.value = '';
       dataCache.invalidateZones();
+      dataCache.notifyMutation(tenantId);
       fetchZones();
     } catch (err) {
       console.error('Error importando GeoJSON:', err);
@@ -155,9 +166,32 @@ export function ZoneManager() {
       });
       showToast(`Zona "${name}" eliminada exitosamente`, 'success');
       dataCache.invalidateZones();
+      dataCache.notifyMutation(tenantId);
       fetchZones();
     } catch (err) {
-      showToast('Error al eliminar zona', 'error');
+      const detail = err.response?.data?.detail || 'Error al eliminar zona';
+      showToast(detail, 'error');
+    }
+  };
+
+  const handlePurgeAllZones = async () => {
+    if (zones.length === 0) return;
+    if (!window.confirm(`¿Estás seguro de eliminar TODAS las ${zones.length} zonas registradas? Esta acción no se puede deshacer.`)) return;
+    setPurgingAll(true);
+    try {
+      const res = await axios.delete(`${API_BASE}/zones/purge`, {
+        headers: { 'X-Tenant-ID': tenantId }
+      });
+      const count = res.data?.eliminados ?? zones.length;
+      showToast(`Se eliminaron ${count} zonas correctamente`, 'success');
+      dataCache.invalidateZones();
+      dataCache.notifyMutation(tenantId);
+      fetchZones();
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Error al eliminar todas las zonas';
+      showToast(detail, 'error');
+    } finally {
+      setPurgingAll(false);
     }
   };
 
@@ -214,7 +248,19 @@ export function ZoneManager() {
             />
           </div>
 
-          <div className="md:col-span-3 flex flex-col sm:flex-row justify-end gap-3 pt-2">
+          <div className="md:col-span-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={replaceExisting}
+                onChange={(e) => setReplaceExisting(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500/40"
+              />
+              <span>
+                Reemplazar zonas existentes <span className="text-slate-400">(elimina las anteriores para evitar superposición)</span>
+              </span>
+            </label>
+
             <button
               type="submit"
               disabled={uploading || !selectedFile}
@@ -228,7 +274,7 @@ export function ZoneManager() {
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  Subir Zona a la Empresa
+                  {replaceExisting ? 'Reemplazar Zonas de la Empresa' : 'Subir Zona a la Empresa'}
                 </>
               )}
             </button>
@@ -243,13 +289,25 @@ export function ZoneManager() {
             <Layers className="w-5 h-5 text-emerald-400" />
             <h3 className="text-sm font-bold text-white">Sectores Geográficos Registrados ({zones.length})</h3>
           </div>
-          <button
-            onClick={fetchZones}
-            className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800/60 border border-slate-700/60 transition-colors"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Actualizar
-          </button>
+          <div className="flex items-center gap-2">
+            {zones.length > 0 && (
+              <button
+                onClick={handlePurgeAllZones}
+                disabled={purgingAll}
+                className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1.5 px-2.5 py-1 rounded bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {purgingAll ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Eliminar Todas
+              </button>
+            )}
+            <button
+              onClick={fetchZones}
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800/60 border border-slate-700/60 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Actualizar
+            </button>
+          </div>
         </div>
 
         {loading ? (

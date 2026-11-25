@@ -46,6 +46,10 @@ async def purge_zones(
 ):
     """Elimina únicamente todas las zonas personalizadas de la empresa (Requiere rol Admin)."""
     async for session in get_db_session(tenant_id=x_tenant_id):
+        await session.execute(
+            text("UPDATE pedidos SET zona_id = NULL, zona_nombre = NULL WHERE tenant_id = :tenant_id AND zona_id IS NOT NULL"),
+            {"tenant_id": x_tenant_id},
+        )
         sql = text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id")
         res = await session.execute(sql, {"tenant_id": x_tenant_id})
         await session.commit()

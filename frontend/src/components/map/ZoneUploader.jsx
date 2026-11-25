@@ -10,6 +10,7 @@ export function ZoneUploader({ onZonesUploaded }) {
   const [zoneCode, setZoneCode] = useState('');
   const [fileContent, setFileContent] = useState(null);
   const [fileName, setFileName] = useState('');
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const handleFileSelect = (e) => {
@@ -39,7 +40,12 @@ export function ZoneUploader({ onZonesUploaded }) {
       return;
     }
 
+    if (replaceExisting && !window.confirm('¿Reemplazar todas las zonas existentes de la empresa por las del nuevo GeoJSON?')) {
+      return;
+    }
+
     setUploading(true);
+    const tenantId = localStorage.getItem('active_tenant_id') || 'empresa_demo';
 
     try {
       await axios.post(
@@ -47,8 +53,10 @@ export function ZoneUploader({ onZonesUploaded }) {
         {
           nombre_zona: zoneName,
           codigo_zona: zoneCode || 'ZONA-PROP',
-          geojson_geometry: fileContent
-        }
+          geojson_geometry: fileContent,
+          replace_existing: replaceExisting
+        },
+        { headers: { 'X-Tenant-ID': tenantId } }
       );
 
       setZoneName('');
@@ -56,6 +64,7 @@ export function ZoneUploader({ onZonesUploaded }) {
       setFileContent(null);
       setFileName('');
       dataCache.invalidateZones();
+      dataCache.notifyMutation(tenantId);
       onZonesUploaded?.();
     } catch (err) {
       console.error("Error al importar zona GeoJSON", err);
@@ -116,13 +125,23 @@ export function ZoneUploader({ onZonesUploaded }) {
           </label>
         </div>
 
+        <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={replaceExisting}
+            onChange={(e) => setReplaceExisting(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500/40"
+          />
+          <span>Reemplazar zonas existentes (elimina las anteriores antes de importar)</span>
+        </label>
+
         <button
           type="submit"
           disabled={uploading || !fileContent || !zoneName.trim()}
           className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-50 touch-target"
         >
           {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          <span>{uploading ? 'Guardando Zona...' : 'Importar Polígono GeoJSON'}</span>
+          <span>{uploading ? 'Guardando Zona...' : (replaceExisting ? 'Reemplazar Polígonos GeoJSON' : 'Importar Polígono GeoJSON')}</span>
         </button>
       </form>
     </GlassCard>

@@ -16,6 +16,7 @@ class ZoneCreateGeoJSON(BaseModel):
     nombre_zona: str
     codigo_zona: Optional[str] = None
     geojson_geometry: Dict[str, Any]  # FeatureCollection, Feature, Polygon o MultiPolygon GeoJSON
+    replace_existing: bool = False
 
 
 class ZoneResponse(BaseModel):
@@ -34,6 +35,7 @@ class UpdateZoneBarcode(BaseModel):
 class InventoryScanPackageReq(BaseModel):
     barcode: str
     zone_id: str
+    subzone_id: Optional[str] = None
 
 
 
@@ -140,12 +142,29 @@ async def import_zone_geojson(
 
     async for session in get_db_session(tenant_id=x_tenant_id):
         try:
-            for idx, feat in enumerate(features):
+            valid_features = [
+                f for f in features
+                if (f.get("geometry") or {}).get("type") in ("Polygon", "MultiPolygon", "GeometryCollection")
+            ]
+            if not valid_features:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El archivo GeoJSON no contiene polígonos válidos (Polygon, MultiPolygon o GeometryCollection)."
+                )
+
+            if req.replace_existing:
+                await session.execute(
+                    text("UPDATE pedidos SET zona_id = NULL, zona_nombre = NULL WHERE tenant_id = :tenant_id AND zona_id IS NOT NULL"),
+                    {"tenant_id": x_tenant_id},
+                )
+                await session.execute(
+                    text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id"),
+                    {"tenant_id": x_tenant_id},
+                )
+
+            for idx, feat in enumerate(valid_features):
                 props = feat.get("properties") or {}
                 geom = feat.get("geometry")
-
-                if not geom or geom.get("type") not in ("Polygon", "MultiPolygon", "GeometryCollection"):
-                    continue
 
                 # Determinar nombre descriptivo del sector/zona
                 feat_name = (
@@ -263,6 +282,10 @@ async def import_zone_geojson(
 async def purge_all_zones(x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina todas las zonas personalizadas de la empresa."""
     async for session in get_db_session(tenant_id=x_tenant_id):
+        await session.execute(
+            text("UPDATE pedidos SET zona_id = NULL, zona_nombre = NULL WHERE tenant_id = :tenant_id AND zona_id IS NOT NULL"),
+            {"tenant_id": x_tenant_id},
+        )
         sql = text("DELETE FROM zonas_personalizadas WHERE tenant_id = :tenant_id")
         res = await session.execute(sql, {"tenant_id": x_tenant_id})
         await session.commit()
@@ -273,6 +296,10 @@ async def purge_all_zones(x_tenant_id: str = Depends(get_tenant_id)):
 async def delete_zone(zone_id: uuid.UUID, x_tenant_id: str = Depends(get_tenant_id)):
     """Elimina una zona específica por ID."""
     async for session in get_db_session(tenant_id=x_tenant_id):
+        await session.execute(
+            text("UPDATE pedidos SET zona_id = NULL, zona_nombre = NULL WHERE zona_id = :id AND tenant_id = :tenant_id"),
+            {"id": zone_id, "tenant_id": x_tenant_id},
+        )
         sql = text("DELETE FROM zonas_personalizadas WHERE id = :id AND tenant_id = :tenant_id")
         res = await session.execute(sql, {"id": zone_id, "tenant_id": x_tenant_id})
         await session.commit()
@@ -332,59 +359,210 @@ async def update_zone_barcode(
 
 @router.get("/inventory-summary")
 async def get_inventory_summary(x_tenant_id: str = Depends(get_tenant_id)):
-    """Obtiene el listado de zonas activas con conteo en tiempo real de paquetes en bodega, esperados y alertas rojas."""
+    """Obtiene el listado de zonas activas (y sus subzonas de inventario si están divididas) con conteos en tiempo real."""
     async for session in get_db_session(tenant_id=x_tenant_id):
-        sql = text("""
-            WITH conteo_zonas AS (
-                SELECT
-                    p.zona_id,
-                    COUNT(*) FILTER (WHERE p.estado = 'EN_BODEGA') AS total_bodega,
-                    COUNT(*) FILTER (WHERE p.estado = 'SECTORIZADO') AS pendientes_escanear,
-                    COUNT(*) FILTER (
-                        WHERE p.estado = 'EN_BODEGA'
-                          AND p.cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
-                    ) AS alertas_rojas
-                FROM pedidos p
-                WHERE p.tenant_id = :tenant_id
-                  AND p.estado IN ('EN_BODEGA', 'SECTORIZADO')
-                  AND p.zona_id IS NOT NULL
-                GROUP BY p.zona_id
-            )
-            SELECT 
-                z.id,
-                z.nombre_zona,
-                z.codigo_zona,
-                z.codigo_barras,
-                z.activa,
-                COALESCE(c.total_bodega, 0) AS total_bodega,
-                COALESCE(c.pendientes_escanear, 0) AS pendientes_escanear,
-                GREATEST(0, COALESCE(c.total_bodega, 0) + COALESCE(c.pendientes_escanear, 0) - COALESCE(c.alertas_rojas, 0)) AS total_esperados,
-                COALESCE(c.alertas_rojas, 0) AS alertas_rojas
-            FROM zonas_personalizadas z
-            LEFT JOIN conteo_zonas c ON c.zona_id = z.id
-            WHERE z.tenant_id = :tenant_id AND z.activa = true
-            ORDER BY z.nombre_zona ASC
-        """)
-        res = await session.execute(sql, {"tenant_id": x_tenant_id})
-        rows = res.fetchall()
+        zones_res = await session.execute(text("""
+            SELECT id, nombre_zona, codigo_zona, codigo_barras, activa
+            FROM zonas_personalizadas
+            WHERE tenant_id = :tenant_id AND activa = true
+            ORDER BY nombre_zona ASC
+        """), {"tenant_id": x_tenant_id})
+        zones_rows = zones_res.fetchall()
+
+        subzones_res = await session.execute(text("""
+            SELECT id, zona_padre_id, letra, nombre_subzona, codigo_barras
+            FROM subzonas_inventario
+            WHERE tenant_id = :tenant_id
+            ORDER BY letra ASC
+        """), {"tenant_id": x_tenant_id})
+        subzones_by_parent: Dict[str, List[Any]] = {}
+        for sz in subzones_res.fetchall():
+            subzones_by_parent.setdefault(str(sz.zona_padre_id), []).append(sz)
+
+        counts_res = await session.execute(text("""
+            SELECT
+                p.zona_id,
+                p.subzona_id,
+                COUNT(*) FILTER (WHERE p.estado = 'EN_BODEGA') AS total_bodega,
+                COUNT(*) FILTER (WHERE p.estado = 'SECTORIZADO') AS pendientes_escanear,
+                COUNT(*) FILTER (
+                    WHERE p.estado = 'EN_BODEGA'
+                      AND p.cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
+                ) AS alertas_rojas
+            FROM pedidos p
+            WHERE p.tenant_id = :tenant_id
+              AND p.estado IN ('EN_BODEGA', 'SECTORIZADO')
+              AND p.zona_id IS NOT NULL
+            GROUP BY p.zona_id, p.subzona_id
+        """), {"tenant_id": x_tenant_id})
+
+        parent_totals: Dict[str, Dict[str, int]] = {}
+        subzone_totals: Dict[str, Dict[str, int]] = {}
+        for c in counts_res.fetchall():
+            pzid = str(c.zona_id)
+            pt = parent_totals.setdefault(pzid, {"bodega": 0, "pendientes": 0, "alertas": 0})
+            pt["bodega"] += c.total_bodega or 0
+            pt["pendientes"] += c.pendientes_escanear or 0
+            pt["alertas"] += c.alertas_rojas or 0
+
+            if c.subzona_id:
+                szid = str(c.subzona_id)
+                st = subzone_totals.setdefault(szid, {"bodega": 0, "pendientes": 0, "alertas": 0})
+                st["bodega"] += c.total_bodega or 0
+                st["pendientes"] += c.pendientes_escanear or 0
+                st["alertas"] += c.alertas_rojas or 0
 
         colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16']
+        result = []
 
-        return [
-            {
-                "id": str(r.id),
-                "nombre": r.nombre_zona,
-                "codigo": r.codigo_zona or "",
-                "codigo_barras": r.codigo_barras or f"ZONA-{r.nombre_zona.upper().replace(' ', '-')}",
-                "total_bodega": r.total_bodega or 0,
-                "pendientes_escanear": r.pendientes_escanear or 0,
-                "total_esperados": r.total_esperados or 0,
-                "alertas_rojas": r.alertas_rojas or 0,
-                "tiene_alerta_roja": bool((r.alertas_rojas or 0) > 0),
-                "color": colors[idx % len(colors)]
-            }
-            for idx, r in enumerate(rows)
-        ]
+        for idx, r in enumerate(zones_rows):
+            zid = str(r.id)
+            base_cb = r.codigo_barras or f"ZONA-{r.nombre_zona.upper().replace(' ', '-')}"
+            color = colors[idx % len(colors)]
+            pt = parent_totals.get(zid, {"bodega": 0, "pendientes": 0, "alertas": 0})
+            parent_esperados = max(0, pt["bodega"] + pt["pendientes"] - pt["alertas"])
+
+            subzones = subzones_by_parent.get(zid, [])
+            if subzones:
+                for sz in subzones:
+                    szid = str(sz.id)
+                    st = subzone_totals.get(szid, {"bodega": 0, "pendientes": 0, "alertas": 0})
+                    sz_bodega = st["bodega"]
+                    sz_alertas = st["alertas"]
+                    result.append({
+                        "id": szid,
+                        "parent_zone_id": zid,
+                        "subzone_id": szid,
+                        "is_subzone": True,
+                        "letra": sz.letra,
+                        "nombre": sz.nombre_subzona,
+                        "parent_nombre": r.nombre_zona,
+                        "codigo": f"{r.codigo_zona or ''}-{sz.letra}".strip("-"),
+                        "codigo_barras": sz.codigo_barras or f"{base_cb}-{sz.letra}",
+                        "total_bodega": sz_bodega,
+                        "pendientes_escanear": 0,
+                        "total_esperados": max(0, sz_bodega - sz_alertas),
+                        "parent_total_esperados": parent_esperados,
+                        "alertas_rojas": sz_alertas,
+                        "tiene_alerta_roja": bool(sz_alertas > 0),
+                        "color": color,
+                    })
+            else:
+                result.append({
+                    "id": zid,
+                    "parent_zone_id": zid,
+                    "subzone_id": None,
+                    "is_subzone": False,
+                    "letra": None,
+                    "nombre": r.nombre_zona,
+                    "parent_nombre": r.nombre_zona,
+                    "codigo": r.codigo_zona or "",
+                    "codigo_barras": base_cb,
+                    "total_bodega": pt["bodega"],
+                    "pendientes_escanear": pt["pendientes"],
+                    "total_esperados": parent_esperados,
+                    "parent_total_esperados": parent_esperados,
+                    "alertas_rojas": pt["alertas"],
+                    "tiene_alerta_roja": bool(pt["alertas"] > 0),
+                    "color": color,
+                })
+
+        return result
+
+
+@router.post("/{zone_id}/subdivide")
+async def subdivide_zone(
+    zone_id: uuid.UUID,
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """
+    Divide una zona en subzonas de inventario (A y B inicialmente; si ya está dividida, agrega C, D, ...).
+    No modifica polígonos GeoJSON ni afecta el mapa.
+    """
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        z_res = await session.execute(
+            text("SELECT id, nombre_zona, codigo_barras FROM zonas_personalizadas WHERE id = :zid AND tenant_id = :tenant_id"),
+            {"zid": zone_id, "tenant_id": x_tenant_id}
+        )
+        z = z_res.first()
+        if not z:
+            raise HTTPException(status_code=404, detail="Zona no encontrada")
+
+        existing_res = await session.execute(
+            text("SELECT letra FROM subzonas_inventario WHERE zona_padre_id = :zid AND tenant_id = :tenant_id ORDER BY letra ASC"),
+            {"zid": zone_id, "tenant_id": x_tenant_id}
+        )
+        existing_letters = {r.letra.upper() for r in existing_res.fetchall()}
+
+        base_cb = z.codigo_barras or f"ZONA-{z.nombre_zona.upper().replace(' ', '-')}"
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+        if not existing_letters:
+            letters_to_create = ["A", "B"]
+        else:
+            next_letter = next((ch for ch in alphabet if ch not in existing_letters), None)
+            if not next_letter:
+                raise HTTPException(status_code=400, detail="Se alcanzó el máximo de subzonas (A-Z) para esta zona.")
+            letters_to_create = [next_letter]
+
+        created = []
+        for letra in letters_to_create:
+            nombre_sub = f"{z.nombre_zona} {letra}"
+            cb_sub = f"{base_cb}-{letra}"
+            ins_res = await session.execute(text("""
+                INSERT INTO subzonas_inventario (tenant_id, zona_padre_id, letra, nombre_subzona, codigo_barras)
+                VALUES (:tenant_id, :zid, :letra, :nombre, :cb)
+                RETURNING id, letra, nombre_subzona, codigo_barras
+            """), {
+                "tenant_id": x_tenant_id,
+                "zid": zone_id,
+                "letra": letra,
+                "nombre": nombre_sub,
+                "cb": cb_sub,
+            })
+            row = ins_res.first()
+            if row:
+                created.append({
+                    "id": str(row.id),
+                    "letra": row.letra,
+                    "nombre": row.nombre_subzona,
+                    "codigo_barras": row.codigo_barras,
+                })
+
+        await session.commit()
+        return {
+            "status": "ok",
+            "parent_zone_id": str(zone_id),
+            "created": created,
+            "message": (
+                f"Zona '{z.nombre_zona}' dividida en {z.nombre_zona} A y {z.nombre_zona} B (ambas en 0)."
+                if len(created) == 2
+                else f"Subzona '{created[0]['nombre']}' agregada (en 0)."
+            ),
+        }
+
+
+@router.delete("/{zone_id}/subdivide")
+async def merge_subdivided_zone(
+    zone_id: uuid.UUID,
+    x_tenant_id: str = Depends(get_tenant_id)
+):
+    """Elimina la división en subzonas y consolida todos los paquetes escaneados nuevamente en la zona padre."""
+    async for session in get_db_session(tenant_id=x_tenant_id):
+        await session.execute(
+            text("UPDATE pedidos SET subzona_id = NULL WHERE zona_id = :zid AND tenant_id = :tenant_id AND subzona_id IS NOT NULL"),
+            {"zid": zone_id, "tenant_id": x_tenant_id}
+        )
+        del_res = await session.execute(
+            text("DELETE FROM subzonas_inventario WHERE zona_padre_id = :zid AND tenant_id = :tenant_id"),
+            {"zid": zone_id, "tenant_id": x_tenant_id}
+        )
+        await session.commit()
+        return {
+            "status": "ok",
+            "deleted_subzones": del_res.rowcount or 0,
+            "message": "División eliminada. Todos los paquetes se consolidaron en la zona original."
+        }
 
 
 @router.get("/unscanned-orders")
@@ -459,39 +637,70 @@ async def get_zone_packages(
     zone_id: uuid.UUID,
     x_tenant_id: str = Depends(get_tenant_id)
 ):
-    """Devuelve todos los códigos/paquetes de una zona: alertas rojas (no importados), en bodega y pendientes por escanear."""
+    """Devuelve todos los códigos/paquetes de una zona o subzona: alertas rojas, en bodega y pendientes por escanear."""
     async for session in get_db_session(tenant_id=x_tenant_id):
+        sz_res = await session.execute(
+            text("SELECT id, zona_padre_id, nombre_subzona, codigo_barras FROM subzonas_inventario WHERE id = :szid AND tenant_id = :tenant_id"),
+            {"szid": zone_id, "tenant_id": x_tenant_id}
+        )
+        sz = sz_res.first()
+        target_zid = sz.zona_padre_id if sz else zone_id
+
         z_res = await session.execute(
             text("SELECT id, nombre_zona, codigo_zona, codigo_barras FROM zonas_personalizadas WHERE id = :zid AND tenant_id = :tenant_id"),
-            {"zid": zone_id, "tenant_id": x_tenant_id}
+            {"zid": target_zid, "tenant_id": x_tenant_id}
         )
         z = z_res.first()
         if not z:
             raise HTTPException(status_code=404, detail="Zona no encontrada")
 
-        p_res = await session.execute(text("""
-            SELECT id, guia, cliente, direccion_original, direccion_limpia,
-                   zona_id, zona_nombre, estado,
-                   (cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN') AS alerta_roja,
-                   (cliente = 'Paquete Extra (Verificado en Bodega)') AS verificado_bodega,
-                   CASE
-                       WHEN estado = 'EN_BODEGA' THEN COALESCE(datos_extra->>'zona_importacion_nombre', datos_extra->>'zona_original_nombre', zona_nombre)
-                       ELSE zona_nombre
-                   END AS zona_orig,
-                   CASE
-                       WHEN estado = 'EN_BODEGA' THEN datos_extra->>'escaneado_por'
-                       ELSE NULL
-                   END AS escaneado_por,
-                   fecha_importacion, fecha_actualizacion
-            FROM pedidos
-            WHERE tenant_id = :tenant_id
-              AND zona_id = :zid
-              AND estado IN ('EN_BODEGA', 'SECTORIZADO')
-            ORDER BY
-                CASE WHEN estado = 'EN_BODEGA' THEN 0 ELSE 1 END,
-                fecha_actualizacion DESC
-            LIMIT 1000
-        """), {"tenant_id": x_tenant_id, "zid": zone_id})
+        if sz:
+            p_res = await session.execute(text("""
+                SELECT id, guia, cliente, direccion_original, direccion_limpia,
+                       zona_id, zona_nombre, estado,
+                       (cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN') AS alerta_roja,
+                       (cliente = 'Paquete Extra (Verificado en Bodega)') AS verificado_bodega,
+                       CASE
+                           WHEN estado = 'EN_BODEGA' THEN COALESCE(datos_extra->>'zona_importacion_nombre', datos_extra->>'zona_original_nombre', zona_nombre)
+                           ELSE zona_nombre
+                       END AS zona_orig,
+                       CASE
+                           WHEN estado = 'EN_BODEGA' THEN datos_extra->>'escaneado_por'
+                           ELSE NULL
+                       END AS escaneado_por,
+                       fecha_importacion, fecha_actualizacion
+                FROM pedidos
+                WHERE tenant_id = :tenant_id
+                  AND zona_id = :zid
+                  AND subzona_id = :szid
+                  AND estado = 'EN_BODEGA'
+                ORDER BY fecha_actualizacion DESC
+                LIMIT 1000
+            """), {"tenant_id": x_tenant_id, "zid": target_zid, "szid": sz.id})
+        else:
+            p_res = await session.execute(text("""
+                SELECT id, guia, cliente, direccion_original, direccion_limpia,
+                       zona_id, zona_nombre, estado,
+                       (cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN') AS alerta_roja,
+                       (cliente = 'Paquete Extra (Verificado en Bodega)') AS verificado_bodega,
+                       CASE
+                           WHEN estado = 'EN_BODEGA' THEN COALESCE(datos_extra->>'zona_importacion_nombre', datos_extra->>'zona_original_nombre', zona_nombre)
+                           ELSE zona_nombre
+                       END AS zona_orig,
+                       CASE
+                           WHEN estado = 'EN_BODEGA' THEN datos_extra->>'escaneado_por'
+                           ELSE NULL
+                       END AS escaneado_por,
+                       fecha_importacion, fecha_actualizacion
+                FROM pedidos
+                WHERE tenant_id = :tenant_id
+                  AND zona_id = :zid
+                  AND estado IN ('EN_BODEGA', 'SECTORIZADO')
+                ORDER BY
+                    CASE WHEN estado = 'EN_BODEGA' THEN 0 ELSE 1 END,
+                    fecha_actualizacion DESC
+                LIMIT 1000
+            """), {"tenant_id": x_tenant_id, "zid": target_zid})
 
         en_bodega = []
         pendientes = []
@@ -601,6 +810,7 @@ async def remove_package_from_zone(
                 SET estado = 'SECTORIZADO',
                     zona_id = :zid,
                     zona_nombre = :zname,
+                    subzona_id = NULL,
                     fecha_actualizacion = CURRENT_TIMESTAMP
                 WHERE id = :pid AND tenant_id = :tenant_id
             """), {
@@ -700,35 +910,43 @@ async def reset_zone_inventory(
     zone_id: uuid.UUID,
     x_tenant_id: str = Depends(get_tenant_id)
 ):
-    """Reinicia el contador de la zona pasando los paquetes previos en bodega a PENDIENTE_REINVENTARIO y limpiando códigos falsos sin verificar."""
+    """Reinicia el contador de la zona o subzona pasando los paquetes previos en bodega a PENDIENTE_REINVENTARIO y limpiando códigos falsos sin verificar."""
     async for session in get_db_session(tenant_id=x_tenant_id):
-        await session.execute(text("""
+        sz_res = await session.execute(
+            text("SELECT id, zona_padre_id FROM subzonas_inventario WHERE id = :szid AND tenant_id = :tenant_id"),
+            {"szid": zone_id, "tenant_id": x_tenant_id}
+        )
+        sz = sz_res.first()
+        filter_clause = "subzona_id = :target_id" if sz else "zona_id = :target_id"
+        target_id = sz.id if sz else zone_id
+
+        await session.execute(text(f"""
             DELETE FROM pedidos_historial
             WHERE tenant_id = :tenant_id
               AND pedido_id IN (
                   SELECT id FROM pedidos
                   WHERE tenant_id = :tenant_id
-                    AND zona_id = :zone_id
+                    AND {filter_clause}
                     AND estado = 'EN_BODEGA'
                     AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
               )
-        """), {"tenant_id": x_tenant_id, "zone_id": zone_id})
+        """), {"tenant_id": x_tenant_id, "target_id": target_id})
 
-        del_res = await session.execute(text("""
+        del_res = await session.execute(text(f"""
             DELETE FROM pedidos
             WHERE tenant_id = :tenant_id
-              AND zona_id = :zone_id
+              AND {filter_clause}
               AND estado = 'EN_BODEGA'
               AND cliente = '⚠️ CÓDIGO NO EN IMPORTACIÓN'
-        """), {"tenant_id": x_tenant_id, "zone_id": zone_id})
+        """), {"tenant_id": x_tenant_id, "target_id": target_id})
 
-        sql = text("""
+        sql = text(f"""
             UPDATE pedidos 
-            SET estado = 'PENDIENTE_REINVENTARIO', fecha_actualizacion = CURRENT_TIMESTAMP
-            WHERE tenant_id = :tenant_id AND zona_id = :zone_id AND estado = 'EN_BODEGA'
+            SET estado = 'PENDIENTE_REINVENTARIO', subzona_id = NULL, fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE tenant_id = :tenant_id AND {filter_clause} AND estado = 'EN_BODEGA'
             RETURNING id
         """)
-        res = await session.execute(sql, {"tenant_id": x_tenant_id, "zone_id": zone_id})
+        res = await session.execute(sql, {"tenant_id": x_tenant_id, "target_id": target_id})
         await session.commit()
         total_afectados = (res.rowcount or 0) + (del_res.rowcount or 0)
         return {
@@ -894,19 +1112,50 @@ async def scan_package_inventory(
         raise HTTPException(status_code=400, detail="zone_id no es un UUID válido")
 
     async for session in get_db_session(tenant_id=x_tenant_id):
-        # 1. Obtener nombre de la zona destino
+        # 1. Resolver si zone_id o subzone_id corresponde a una subzona de inventario
+        target_subzone_id = None
+        target_subzone_name = None
+        parent_zone_id = zone_id
+
+        if payload.subzone_id:
+            try:
+                sz_uuid = uuid.UUID(payload.subzone_id)
+                sz_res = await session.execute(
+                    text("SELECT id, zona_padre_id, nombre_subzona FROM subzonas_inventario WHERE id = :szid AND tenant_id = :tenant_id"),
+                    {"szid": sz_uuid, "tenant_id": x_tenant_id}
+                )
+                sz_row = sz_res.first()
+                if sz_row:
+                    target_subzone_id = sz_row.id
+                    target_subzone_name = sz_row.nombre_subzona
+                    parent_zone_id = sz_row.zona_padre_id
+            except ValueError:
+                pass
+        else:
+            sz_res = await session.execute(
+                text("SELECT id, zona_padre_id, nombre_subzona FROM subzonas_inventario WHERE id = :szid AND tenant_id = :tenant_id"),
+                {"szid": zone_id, "tenant_id": x_tenant_id}
+            )
+            sz_row = sz_res.first()
+            if sz_row:
+                target_subzone_id = sz_row.id
+                target_subzone_name = sz_row.nombre_subzona
+                parent_zone_id = sz_row.zona_padre_id
+
+        # Obtener nombre de la zona padre (para mantener zona_id y zona_nombre del mapa intactos)
         z_query = text("SELECT id, nombre_zona FROM zonas_personalizadas WHERE id = :zid AND tenant_id = :tenant_id")
-        z_res = await session.execute(z_query, {"zid": zone_id, "tenant_id": x_tenant_id})
+        z_res = await session.execute(z_query, {"zid": parent_zone_id, "tenant_id": x_tenant_id})
         zone_row = z_res.first()
         if not zone_row:
             raise HTTPException(status_code=404, detail="La zona seleccionada no existe.")
 
         target_zone_name = zone_row.nombre_zona
+        display_zone_name = target_subzone_name or target_zone_name
 
         # 2. Buscar primero por índice primario exacto (0.08ms) y como fallback por índice funcional UPPER(TRIM(guia))
         p_exact = text("""
             SELECT id, guia, cliente, direccion_original, direccion_limpia,
-                   zona_id, zona_nombre, estado, datos_extra
+                   zona_id, subzona_id, zona_nombre, estado, datos_extra
             FROM pedidos 
             WHERE tenant_id = :tenant_id AND guia = :guia
             LIMIT 1
@@ -917,7 +1166,7 @@ async def scan_package_inventory(
         if not pedido:
             p_upper = text("""
                 SELECT id, guia, cliente, direccion_original, direccion_limpia,
-                       zona_id, zona_nombre, estado, datos_extra
+                       zona_id, subzona_id, zona_nombre, estado, datos_extra
                 FROM pedidos 
                 WHERE tenant_id = :tenant_id
                   AND UPPER(TRIM(guia)) = UPPER(TRIM(:guia))
@@ -935,12 +1184,18 @@ async def scan_package_inventory(
             alerta_roja = es_no_importado and not verificado_bodega
 
             prev_zone_id = str(pedido.zona_id) if pedido.zona_id else None
+            prev_subzone_id = str(pedido.subzona_id) if pedido.subzona_id else None
             prev_zone_name = pedido.zona_nombre or "Sin Zona"
             prev_estado = pedido.estado
 
-            already_in_zone = (prev_zone_id == str(zone_id) and prev_estado == "EN_BODEGA")
-            was_in_bodega_other_zone = (prev_estado == "EN_BODEGA" and prev_zone_id is not None and prev_zone_id != str(zone_id))
-            zone_changed = (prev_zone_id is not None and prev_zone_id != str(zone_id))
+            target_subzone_str = str(target_subzone_id) if target_subzone_id else None
+            already_in_zone = (
+                prev_zone_id == str(parent_zone_id)
+                and prev_subzone_id == target_subzone_str
+                and prev_estado == "EN_BODEGA"
+            )
+            was_in_bodega_other_zone = (prev_estado == "EN_BODEGA" and prev_zone_id is not None and prev_zone_id != str(parent_zone_id))
+            zone_changed = (prev_zone_id is not None and prev_zone_id != str(parent_zone_id))
 
             # Preservar la zona original de importación si aún no estaba guardada
             if "zona_importacion_id" not in extra and prev_zone_id and not es_no_importado:
@@ -948,10 +1203,13 @@ async def scan_package_inventory(
                 extra["zona_importacion_nombre"] = prev_zone_name
             extra["ultimo_escaneo_bodega"] = datetime.now(timezone.utc).isoformat()
             extra["escaneado_por"] = user_name
+            if target_subzone_name:
+                extra["subzona_bodega"] = target_subzone_name
 
             upd_query = text("""
                 UPDATE pedidos 
                 SET zona_id = :zone_id,
+                    subzona_id = :subzone_id,
                     zona_nombre = :zone_name,
                     estado = 'EN_BODEGA',
                     datos_extra = CAST(:datos_extra AS JSONB),
@@ -960,7 +1218,8 @@ async def scan_package_inventory(
                 RETURNING id, guia, cliente, direccion_original, direccion_limpia, zona_nombre, estado
             """)
             upd_res = await session.execute(upd_query, {
-                "zone_id": zone_id,
+                "zone_id": parent_zone_id,
+                "subzone_id": target_subzone_id,
                 "zone_name": target_zone_name,
                 "datos_extra": json.dumps(extra, ensure_ascii=False),
                 "id": pedido.id,
@@ -969,9 +1228,9 @@ async def scan_package_inventory(
             updated_p = upd_res.first()
 
             if not already_in_zone:
-                desc_escaneo = f"【Ingreso a Bodega】 Paquete escaneado en zona 【{target_zone_name}】 por operador 【{user_name}】."
+                desc_escaneo = f"【Ingreso a Bodega】 Paquete escaneado en zona 【{display_zone_name}】 por operador 【{user_name}】."
                 if zone_changed:
-                    desc_escaneo = f"【Reubicación Bodega】 Paquete movido de 【{prev_zone_name}】 a 【{target_zone_name}】 por operador 【{user_name}】."
+                    desc_escaneo = f"【Reubicación Bodega】 Paquete movido de 【{prev_zone_name}】 a 【{display_zone_name}】 por operador 【{user_name}】."
 
                 await registrar_historial_evento(
                     session=session,
@@ -987,8 +1246,9 @@ async def scan_package_inventory(
                     detalles={
                         "zona_anterior_id": prev_zone_id,
                         "zona_anterior": prev_zone_name,
-                        "zona_nueva_id": str(zone_id),
-                        "zona_nueva": target_zone_name,
+                        "zona_nueva_id": str(parent_zone_id),
+                        "zona_nueva": display_zone_name,
+                        "subzona_id": target_subzone_str,
                         "reubicado_en_bodega": was_in_bodega_other_zone
                     }
                 )
@@ -1007,7 +1267,7 @@ async def scan_package_inventory(
                 "guia": updated_p.guia,
                 "cliente": updated_p.cliente or "Cliente no registrado",
                 "direccion": updated_p.direccion_limpia or updated_p.direccion_original,
-                "zona_nombre": updated_p.zona_nombre,
+                "zona_nombre": display_zone_name,
                 "estado": updated_p.estado
             }
         else:
@@ -1019,19 +1279,23 @@ async def scan_package_inventory(
                 "ultimo_escaneo_bodega": datetime.now(timezone.utc).isoformat(),
                 "escaneado_por": user_name
             }
+            if target_subzone_name:
+                extra_new["subzona_bodega"] = target_subzone_name
+
             ins_query = text("""
                 INSERT INTO pedidos (
-                    tenant_id, guia, cliente, direccion_original, zona_id, zona_nombre, estado, datos_extra
+                    tenant_id, guia, cliente, direccion_original, zona_id, subzona_id, zona_nombre, estado, datos_extra
                 ) VALUES (
                     :tenant_id, :guia, '⚠️ CÓDIGO NO EN IMPORTACIÓN', 'Código escaneado en bodega que no existe en el archivo importado',
-                    :zone_id, :zone_name, 'EN_BODEGA', CAST(:datos_extra AS JSONB)
+                    :zone_id, :subzone_id, :zone_name, 'EN_BODEGA', CAST(:datos_extra AS JSONB)
                 )
                 RETURNING id, guia, cliente, direccion_original, zona_nombre, estado
             """)
             ins_res = await session.execute(ins_query, {
                 "tenant_id": x_tenant_id,
                 "guia": barcode,
-                "zone_id": zone_id,
+                "zone_id": parent_zone_id,
+                "subzone_id": target_subzone_id,
                 "zone_name": target_zone_name,
                 "datos_extra": json.dumps(extra_new, ensure_ascii=False)
             })
@@ -1043,12 +1307,12 @@ async def scan_package_inventory(
                 pedido_id=new_p.id,
                 guia=new_p.guia,
                 tipo_evento="CODIGO_NO_IMPORTADO_BODEGA",
-                descripcion=f"【⚠️ Alerta Código No Importado】 Código '{barcode}' escaneado en zona 【{target_zone_name}】 por 【{user_name}】. No figura en la importación; zona marcada en ROJO para revisión.",
+                descripcion=f"【⚠️ Alerta Código No Importado】 Código '{barcode}' escaneado en zona 【{display_zone_name}】 por 【{user_name}】. No figura en la importación; zona marcada en ROJO para revisión.",
                 estado_anterior=None,
                 estado_nuevo="EN_BODEGA",
                 usuario_id=current_user.get("id") if current_user.get("id") else None,
                 usuario_nombre=user_name,
-                detalles={"zona": target_zone_name, "alerta_roja": True}
+                detalles={"zona": display_zone_name, "alerta_roja": True}
             )
             await session.commit()
 
@@ -1065,7 +1329,7 @@ async def scan_package_inventory(
                 "guia": new_p.guia,
                 "cliente": new_p.cliente,
                 "direccion": new_p.direccion_original,
-                "zona_nombre": new_p.zona_nombre,
+                "zona_nombre": display_zone_name,
                 "estado": new_p.estado
             }
 
